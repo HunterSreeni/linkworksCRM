@@ -1,0 +1,265 @@
+import { v4 as uuidv4 } from 'uuid';
+import { supabaseAdmin } from '../../config/supabase.js';
+import { getEmailAdapter } from './adapter.js';
+import { classifyEmail } from './classifier.js';
+import { extractFromEmail } from './parser.js';
+import { parseAttachmentContent } from '../attachmentParser.js';
+
+let pollingInterval = null;
+let lastSeenUid = 0;
+let isPolling = false;
+
+/**
+ * Process a single fetched email - classify, parse, create records.
+ */
+async function processEmail(email) {
+  try {
+    const emailId = uuidv4();
+
+    // Classify the email
+    const { classification, reason } = classifyEmail(email);
+
+    // Store the email record (matching emails table schema)
+    const emailRecord = {
+      id: emailId,
+      graph_message_id: email.message_id || null,
+      thread_id: email.in_reply_to || null,
+      direction: 'inbound',
+      classification,
+      subject: email.subject,
+      from_address: email.from_address,
+      to_address: email.to_address,
+      cc_address: null,
+      body_raw: email.body_html || email.body_text || '',
+      body_clean: email.body_text || '',
+      has_attachments: (email.attachments || []).length > 0,
+      is_processed: true,
+      received_at: email.date ? new Date(email.date).toISOString() : new Date().toISOString(),
+      processed_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+    };
+
+    const { error: emailError } = await supabaseAdmin.from('emails').insert(emailRecord);
+    if (emailError) {
+      console.error('[Poller] Failed to store email:', emailError.message);
+      return;
+    }
+
+    // Store attachments
+    for (const att of email.attachments || []) {
+      const attachmentRecord = {
+        id: uuidv4(),
+        email_id: emailId,
+        filename: att.filename,
+        content_type: att.content_type,
+        size: att.size,
+        created_at: new Date().toISOString(),
+      };
+
+      // Store attachment metadata (content would go to storage in production)
+      await supabaseAdmin.from('attachments').insert(attachmentRecord);
+    }
+
+    // Skip further processing for noise and bounce with no thread
+    if (classification === 'noise') {
+      console.log(`[Poller] Discarded noise email: ${email.subject}`);
+      return;
+    }
+
+    // For BOUNCE - try to link to original outbound email via thread_id
+    if (classification === 'bounce' && email.in_reply_to) {
+      const { data: originalEmail } = await supabaseAdmin
+        .from('emails')
+        .select('id')
+        .eq('graph_message_id', email.in_reply_to)
+        .single();
+
+      if (originalEmail) {
+        // Find the request that references this outbound email
+        const { data: linkedRequest } = await supabaseAdmin
+          .from('requests')
+          .select('id')
+          .eq('outbound_email_id', originalEmail.id)
+          .single();
+
+        if (linkedRequest) {
+          // Update request status to delivery_failed
+          await supabaseAdmin
+            .from('requests')
+            .update({
+              status: 'delivery_failed',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', linkedRequest.id)
+            .in('status', ['replied', 'processing']);
+
+          console.log(`[Poller] Bounce linked to request ${linkedRequest.id}`);
+        }
+      }
+      return;
+    }
+
+    // For BOOKING - extract data and create a request
+    if (classification === 'booking') {
+      // Extract from email body
+      let extractedData = extractFromEmail(email.body_text);
+
+      // Also try extracting from attachments
+      for (const att of email.attachments || []) {
+        try {
+          const attText = await parseAttachmentContent(att.content, att.content_type);
+          if (attText) {
+            const attData = extractFromEmail(attText);
+            // Merge - fill in missing fields from attachment
+            for (const [key, val] of Object.entries(attData)) {
+              if (extractedData[key].confidence === 'missing' && val.confidence !== 'missing') {
+                extractedData[key] = val;
+              }
+            }
+          }
+        } catch (attErr) {
+          console.error(`[Poller] Failed to parse attachment ${att.filename}:`, attErr.message);
+        }
+      }
+
+      // Create a request from the extracted data (matching requests table schema)
+      const requestId = uuidv4();
+      const requestRecord = {
+        id: requestId,
+        inbound_email_id: emailId,
+        status: 'draft',
+        collection_address: extractedData.collection_address.value,
+        collection_address_confidence: extractedData.collection_address.confidence,
+        delivery_address: extractedData.delivery_address.value,
+        delivery_address_confidence: extractedData.delivery_address.confidence,
+        collection_datetime: extractedData.collection_date.value,
+        collection_datetime_confidence: extractedData.collection_date.confidence,
+        delivery_datetime: extractedData.delivery_date.value,
+        delivery_datetime_confidence: extractedData.delivery_date.confidence,
+        is_hazardous: extractedData.hazardous.value || false,
+        is_hazardous_confidence: extractedData.hazardous.confidence,
+        weight: extractedData.weight.value,
+        weight_confidence: extractedData.weight.confidence,
+        dimensions: extractedData.dimensions.value,
+        dimensions_confidence: extractedData.dimensions.confidence,
+        quantity: extractedData.quantity.value,
+        quantity_confidence: extractedData.quantity.confidence,
+        vehicle: extractedData.vehicle_type.value,
+        vehicle_confidence: extractedData.vehicle_type.confidence,
+        customer_ref_number: extractedData.customer_ref_number.value,
+        account_code: extractedData.account_code.value,
+        docket_number: null,
+        assigned_to: null,
+        confirmed_by: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      await supabaseAdmin.from('requests').insert(requestRecord);
+
+      console.log(`[Poller] Created request ${requestId} from booking email: ${email.subject}`);
+      return;
+    }
+
+    // For QUERY - try to link to existing request via thread
+    if (classification === 'query' && email.in_reply_to) {
+      const { data: threadEmail } = await supabaseAdmin
+        .from('emails')
+        .select('id')
+        .eq('graph_message_id', email.in_reply_to)
+        .single();
+
+      if (threadEmail) {
+        // Find a request that references this email as inbound or outbound
+        const { data: linkedRequest } = await supabaseAdmin
+          .from('requests')
+          .select('id')
+          .or(`inbound_email_id.eq.${threadEmail.id},outbound_email_id.eq.${threadEmail.id}`)
+          .limit(1)
+          .single();
+
+        if (linkedRequest) {
+          console.log(`[Poller] Query related to request ${linkedRequest.id}`);
+        }
+      }
+      return;
+    }
+
+    // UNCLASSIFIED - leave in triage queue (no request created, email stored)
+    console.log(`[Poller] Unclassified email stored for triage: ${email.subject}`);
+  } catch (err) {
+    console.error('[Poller] Error processing email:', err);
+  }
+}
+
+/**
+ * Run a single poll cycle - connect, fetch, process, disconnect.
+ */
+async function pollCycle() {
+  if (isPolling) {
+    console.log('[Poller] Previous poll still running, skipping');
+    return;
+  }
+
+  isPolling = true;
+  const adapter = getEmailAdapter();
+
+  try {
+    await adapter.connect();
+
+    const emails = await adapter.fetchNewEmails(lastSeenUid);
+    console.log(`[Poller] Fetched ${emails.length} new email(s)`);
+
+    for (const email of emails) {
+      await processEmail(email);
+
+      // Track the highest UID seen
+      if (email.uid && email.uid > lastSeenUid) {
+        lastSeenUid = email.uid;
+      }
+    }
+
+    await adapter.disconnect();
+  } catch (err) {
+    console.error('[Poller] Poll cycle error:', err.message);
+    try {
+      await adapter.disconnect();
+    } catch (_) {
+      // Ignore disconnect errors
+    }
+  } finally {
+    isPolling = false;
+  }
+}
+
+/**
+ * Start the email polling service.
+ * Polls at the interval specified by EMAIL_POLL_INTERVAL_MS.
+ */
+export function startPolling() {
+  const intervalMs = parseInt(process.env.EMAIL_POLL_INTERVAL_MS) || 60000;
+
+  console.log(`[Poller] Starting email polling every ${intervalMs / 1000}s`);
+
+  // Run immediately, then on interval
+  pollCycle();
+  pollingInterval = setInterval(pollCycle, intervalMs);
+}
+
+/**
+ * Stop the email polling service.
+ */
+export function stopPolling() {
+  if (pollingInterval) {
+    clearInterval(pollingInterval);
+    pollingInterval = null;
+    console.log('[Poller] Email polling stopped');
+  }
+}
+
+/**
+ * Check if polling is currently active.
+ */
+export function isPollingActive() {
+  return pollingInterval !== null;
+}
