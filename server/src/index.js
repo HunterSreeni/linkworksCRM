@@ -52,16 +52,17 @@ app.use((err, req, res, _next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`Linkworks CRM server running on port ${PORT}`);
+// Only start server when running directly (not on Vercel)
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`Linkworks CRM server running on port ${PORT}`);
 
-  // Start email polling if enabled
-  if (process.env.EMAIL_POLLING_ENABLED === 'true') {
-    startPolling();
-  } else {
-    console.log('Email polling disabled (set EMAIL_POLLING_ENABLED=true to enable)');
-  }
-});
+    if (process.env.EMAIL_POLLING_ENABLED === 'true') {
+      startPolling();
+    } else {
+      console.log('Email polling disabled (set EMAIL_POLLING_ENABLED=true to enable)');
+    }
+  });
+}
 
 export default app;
