@@ -1,7 +1,9 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
 const AuthContext = createContext(null)
+
+const AUTH_TIMEOUT_MS = 8000
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
@@ -9,6 +11,14 @@ export function AuthProvider({ children }) {
   const [role, setRole] = useState(null)
   const [loading, setLoading] = useState(true)
   const [authError, setAuthError] = useState(null)
+  const loadingResolved = useRef(false)
+
+  function finishLoading(error = null) {
+    if (loadingResolved.current) return
+    loadingResolved.current = true
+    if (error) setAuthError(error)
+    setLoading(false)
+  }
 
   async function fetchProfile(userId) {
     try {
@@ -26,21 +36,28 @@ export function AuthProvider({ children }) {
   }
 
   useEffect(() => {
+    // Hard timeout - never spin longer than AUTH_TIMEOUT_MS no matter what
+    const timeout = setTimeout(() => {
+      if (!loadingResolved.current) {
+        console.warn('Auth loading timed out after', AUTH_TIMEOUT_MS, 'ms')
+        finishLoading('Connection timed out. Please try again.')
+      }
+    }, AUTH_TIMEOUT_MS)
+
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s)
       setUser(s?.user ?? null)
       if (s?.user) {
-        fetchProfile(s.user.id).finally(() => setLoading(false))
+        fetchProfile(s.user.id).finally(() => finishLoading())
       } else {
-        setLoading(false)
+        finishLoading()
       }
     }).catch((err) => {
       console.error('Failed to load session:', err)
-      setAuthError('Failed to connect. Please try again.')
       setUser(null)
       setSession(null)
       setRole(null)
-      setLoading(false)
+      finishLoading('Failed to connect. Please try again.')
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -53,11 +70,14 @@ export function AuthProvider({ children }) {
         } else {
           setRole(null)
         }
-        setLoading(false)
+        finishLoading()
       }
     )
 
-    return () => subscription.unsubscribe()
+    return () => {
+      clearTimeout(timeout)
+      subscription.unsubscribe()
+    }
   }, [])
 
   async function signIn(email, password) {
