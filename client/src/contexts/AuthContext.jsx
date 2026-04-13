@@ -8,6 +8,7 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(null)
   const [role, setRole] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [authError, setAuthError] = useState(null)
 
   async function fetchProfile(userId) {
     try {
@@ -33,12 +34,20 @@ export function AuthProvider({ children }) {
       } else {
         setLoading(false)
       }
+    }).catch((err) => {
+      console.error('Failed to load session:', err)
+      setAuthError('Failed to connect. Please try again.')
+      setUser(null)
+      setSession(null)
+      setRole(null)
+      setLoading(false)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, s) => {
         setSession(s)
         setUser(s?.user ?? null)
+        setAuthError(null)
         if (s?.user) {
           await fetchProfile(s.user.id)
         } else {
@@ -69,7 +78,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, session, role, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, session, role, loading, authError, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   )

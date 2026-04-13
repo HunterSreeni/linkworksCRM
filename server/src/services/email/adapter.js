@@ -1,5 +1,17 @@
-import { ImapFlow } from 'imapflow';
-import { simpleParser } from 'mailparser';
+// ImapFlow and mailparser are lazy-loaded to avoid bundling issues on Vercel serverless
+let ImapFlow;
+let simpleParser;
+
+async function loadImapDeps() {
+  if (!ImapFlow) {
+    const imapModule = await import('imapflow');
+    ImapFlow = imapModule.ImapFlow;
+  }
+  if (!simpleParser) {
+    const mailModule = await import('mailparser');
+    simpleParser = mailModule.simpleParser;
+  }
+}
 
 /**
  * Base email adapter interface.
@@ -34,6 +46,7 @@ class ImapAdapter extends EmailAdapter {
   }
 
   async connect() {
+    await loadImapDeps();
     this.client = new ImapFlow({
       host: process.env.IMAP_HOST,
       port: parseInt(process.env.IMAP_PORT) || 993,

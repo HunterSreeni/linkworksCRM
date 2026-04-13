@@ -1,9 +1,34 @@
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const pdf = require('pdf-parse');
-import mammoth from 'mammoth';
-import * as XLSX from 'xlsx';
 import { extractFromEmail } from './email/parser.js';
+
+// Heavy parsing libraries are lazy-loaded to avoid bundling issues on Vercel serverless.
+// These are only needed when processing email attachments (not for API routes).
+let pdfParse;
+let mammoth;
+let XLSX;
+
+async function getPdfParser() {
+  if (!pdfParse) {
+    const mod = await import('pdf-parse');
+    pdfParse = mod.default || mod;
+  }
+  return pdfParse;
+}
+
+async function getMammoth() {
+  if (!mammoth) {
+    const mod = await import('mammoth');
+    mammoth = mod.default || mod;
+  }
+  return mammoth;
+}
+
+async function getXLSX() {
+  if (!XLSX) {
+    const mod = await import('xlsx');
+    XLSX = mod;
+  }
+  return XLSX;
+}
 
 /**
  * Parse a PDF buffer and extract text content.
@@ -13,6 +38,7 @@ import { extractFromEmail } from './email/parser.js';
  */
 export async function parsePDF(buffer) {
   try {
+    const pdf = await getPdfParser();
     const data = await pdf(buffer);
     return data.text || '';
   } catch (err) {
@@ -29,7 +55,8 @@ export async function parsePDF(buffer) {
  */
 export async function parseWord(buffer) {
   try {
-    const result = await mammoth.extractRawText({ buffer });
+    const mam = await getMammoth();
+    const result = await mam.extractRawText({ buffer });
     return result.value || '';
   } catch (err) {
     console.error('Word parse error:', err.message);
@@ -44,15 +71,16 @@ export async function parseWord(buffer) {
  * @param {Buffer} buffer - Excel file buffer
  * @returns {string} Extracted text
  */
-export function parseExcel(buffer) {
+export async function parseExcel(buffer) {
   try {
-    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    const xlsx = await getXLSX();
+    const workbook = xlsx.read(buffer, { type: 'buffer' });
     const textParts = [];
 
     for (const sheetName of workbook.SheetNames) {
       const sheet = workbook.Sheets[sheetName];
       // Convert sheet to CSV-like text for extraction
-      const csv = XLSX.utils.sheet_to_csv(sheet, { blankrows: false });
+      const csv = xlsx.utils.sheet_to_csv(sheet, { blankrows: false });
       textParts.push(csv);
     }
 

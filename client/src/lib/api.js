@@ -31,6 +31,10 @@ async function request(method, path, body = null) {
     throw new Error('Unauthorized')
   }
 
+  if (res.status >= 500) {
+    throw new Error('Server error - the API is temporarily unavailable. Please try again later.')
+  }
+
   if (!res.ok) {
     const error = await res.json().catch(() => ({ message: res.statusText }))
     throw new Error(error.message || 'Request failed')
