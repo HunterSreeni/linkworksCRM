@@ -13,42 +13,21 @@ router.get('/stats', authenticate, async (req, res) => {
     const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString();
     const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59).toISOString();
 
-    // Total requests
-    const { count: totalRequests } = await supabaseAdmin
-      .from('requests')
-      .select('*', { count: 'exact', head: true });
-
-    // Requests this month
-    const { count: requestsThisMonth } = await supabaseAdmin
-      .from('requests')
-      .select('*', { count: 'exact', head: true })
-      .gte('created_at', thisMonthStart);
-
-    // Requests previous month
-    const { count: requestsPrevMonth } = await supabaseAdmin
-      .from('requests')
-      .select('*', { count: 'exact', head: true })
-      .gte('created_at', prevMonthStart)
-      .lte('created_at', prevMonthEnd);
-
-    // Today's requests
-    const { count: todayRequests } = await supabaseAdmin
-      .from('requests')
-      .select('*', { count: 'exact', head: true })
-      .gte('created_at', todayStart);
-
-    // Pending requests (status = draft)
-    const { count: pendingRequests } = await supabaseAdmin
-      .from('requests')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'draft');
+    // Run all count queries in parallel instead of sequentially
+    const [totalRes, thisMonthRes, prevMonthRes, todayRes, pendingRes] = await Promise.all([
+      supabaseAdmin.from('requests').select('*', { count: 'exact', head: true }),
+      supabaseAdmin.from('requests').select('*', { count: 'exact', head: true }).gte('created_at', thisMonthStart),
+      supabaseAdmin.from('requests').select('*', { count: 'exact', head: true }).gte('created_at', prevMonthStart).lte('created_at', prevMonthEnd),
+      supabaseAdmin.from('requests').select('*', { count: 'exact', head: true }).gte('created_at', todayStart),
+      supabaseAdmin.from('requests').select('*', { count: 'exact', head: true }).eq('status', 'draft'),
+    ]);
 
     return res.json({
-      total_requests: totalRequests || 0,
-      requests_this_month: requestsThisMonth || 0,
-      requests_prev_month: requestsPrevMonth || 0,
-      today_requests: todayRequests || 0,
-      pending_requests: pendingRequests || 0,
+      total_requests: totalRes.count || 0,
+      requests_this_month: thisMonthRes.count || 0,
+      requests_prev_month: prevMonthRes.count || 0,
+      today_requests: todayRes.count || 0,
+      pending_requests: pendingRes.count || 0,
     });
   } catch (err) {
     console.error('Dashboard stats error:', err);
@@ -59,29 +38,45 @@ router.get('/stats', authenticate, async (req, res) => {
 // GET /api/dashboard/weekly - Requests per day for last 7 days
 router.get('/weekly', authenticate, async (req, res) => {
   try {
-    const days = [];
     const now = new Date();
+    const sevenDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
+    const startDate = sevenDaysAgo.toISOString();
 
+    // Single query - fetch all requests from last 7 days, group client-side
+    const { data, error } = await supabaseAdmin
+      .from('requests')
+      .select('created_at')
+      .gte('created_at', startDate)
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+
+    // Build day counts from the results
+    const dayCounts = {};
     for (let i = 6; i >= 0; i--) {
-      const dayDate = new Date(now);
-      dayDate.setDate(dayDate.getDate() - i);
-      const dayStart = new Date(dayDate.getFullYear(), dayDate.getMonth(), dayDate.getDate()).toISOString();
-      const dayEnd = new Date(dayDate.getFullYear(), dayDate.getMonth(), dayDate.getDate(), 23, 59, 59).toISOString();
-
-      const { count } = await supabaseAdmin
-        .from('requests')
-        .select('*', { count: 'exact', head: true })
-        .gte('created_at', dayStart)
-        .lte('created_at', dayEnd);
-
-      days.push({
-        date: dayStart.split('T')[0],
-        day: dayDate.toLocaleDateString('en-US', { weekday: 'short' }),
-        count: count || 0,
-      });
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      dayCounts[key] = 0;
     }
 
-    return res.json({ weekly: days });
+    for (const row of data || []) {
+      const key = row.created_at.slice(0, 10);
+      if (key in dayCounts) {
+        dayCounts[key]++;
+      }
+    }
+
+    const weekly = Object.entries(dayCounts).map(([date, count]) => {
+      const d = new Date(date + 'T00:00:00');
+      return {
+        date,
+        day: d.toLocaleDateString('en-US', { weekday: 'short' }),
+        count,
+      };
+    });
+
+    return res.json({ weekly });
   } catch (err) {
     console.error('Dashboard weekly error:', err);
     return res.status(500).json({ error: 'Failed to fetch weekly data' });
@@ -92,26 +87,32 @@ router.get('/weekly', authenticate, async (req, res) => {
 router.get('/hourly', authenticate, async (req, res) => {
   try {
     const now = new Date();
-    const hours = [];
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59).toISOString();
 
-    for (let h = 0; h < 24; h++) {
-      const hourStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, 0, 0).toISOString();
-      const hourEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, 59, 59).toISOString();
+    // Single query - fetch all of today's requests, group by hour client-side
+    const { data, error } = await supabaseAdmin
+      .from('requests')
+      .select('created_at')
+      .gte('created_at', todayStart)
+      .lte('created_at', todayEnd)
+      .order('created_at', { ascending: true });
 
-      const { count } = await supabaseAdmin
-        .from('requests')
-        .select('*', { count: 'exact', head: true })
-        .gte('created_at', hourStart)
-        .lte('created_at', hourEnd);
+    if (error) throw error;
 
-      hours.push({
-        hour: h,
-        label: `${h.toString().padStart(2, '0')}:00`,
-        count: count || 0,
-      });
+    // Initialize all 24 hours
+    const hourCounts = Array.from({ length: 24 }, (_, h) => ({
+      hour: h,
+      label: `${h.toString().padStart(2, '0')}:00`,
+      count: 0,
+    }));
+
+    for (const row of data || []) {
+      const hour = new Date(row.created_at).getHours();
+      hourCounts[hour].count++;
     }
 
-    return res.json({ hourly: hours });
+    return res.json({ hourly: hourCounts });
   } catch (err) {
     console.error('Dashboard hourly error:', err);
     return res.status(500).json({ error: 'Failed to fetch hourly data' });
