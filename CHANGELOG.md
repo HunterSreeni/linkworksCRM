@@ -8,6 +8,17 @@ Format follows [Semantic Versioning](https://semver.org/):
 
 ---
 
+## [0.2.0] - Planned
+
+### Features
+- **Notifications** - Enable the notification bell in the header with real-time alerts for new bookings, status changes, and team activity
+- **Filters** - Enable filtering across all list views (requests, emails, audit logs) by status, date range, member, classification
+- **Member status tracking** - Manual status updates for team members (active/idle/busy) with timestamp tracking
+- **Per-member email and task tracking** - Track which member sent which email, individual task assignments, and activity history per member
+- **Docket/task state flow** - Fix the processing/confirmed/completed status transitions - implement proper state machine for: draft -> confirmed -> processing -> replied -> closed / delivery_failed
+
+---
+
 ## [0.1.2] - 2026-04-13
 
 ### Fixed
