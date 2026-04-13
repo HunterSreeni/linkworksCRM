@@ -1,7 +1,9 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
 const AuthContext = createContext(null)
+
+const AUTH_TIMEOUT_MS = 10000
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
@@ -9,6 +11,14 @@ export function AuthProvider({ children }) {
   const [role, setRole] = useState(null)
   const [loading, setLoading] = useState(true)
   const [authError, setAuthError] = useState(null)
+  const resolved = useRef(false)
+
+  function finishLoading(error = null) {
+    if (resolved.current) return
+    resolved.current = true
+    if (error) setAuthError(error)
+    setLoading(false)
+  }
 
   async function fetchProfile(userId) {
     const { data, error } = await supabase
@@ -27,31 +37,36 @@ export function AuthProvider({ children }) {
   }
 
   useEffect(() => {
+    // Failsafe: if auth init hangs for any reason, show error modal after 10s
+    const timeout = setTimeout(() => {
+      if (!resolved.current) {
+        console.warn('Auth loading timed out after', AUTH_TIMEOUT_MS, 'ms')
+        finishLoading('Connection timed out. Please sign out and try again.')
+      }
+    }, AUTH_TIMEOUT_MS)
+
     async function initAuth() {
       try {
         // Step 1: Check if a session exists in localStorage
         const { data: { session: storedSession } } = await supabase.auth.getSession()
 
         if (!storedSession) {
-          // No session at all - not logged in
-          setLoading(false)
+          finishLoading()
           return
         }
 
         // Step 2: Validate the token with Supabase server.
         // getSession() returns the token from localStorage WITHOUT refreshing it.
-        // If the access_token is expired, getUser() will use the refresh_token
-        // to get a fresh access_token before returning.
+        // getUser() will use the refresh_token to get a fresh access_token if expired.
         const { data: { user: validatedUser }, error: userError } = await supabase.auth.getUser()
 
         if (userError || !validatedUser) {
-          // Refresh token is also expired or invalid - session is dead
           console.error('Session expired:', userError?.message)
           await supabase.auth.signOut().catch(() => {})
           setUser(null)
           setSession(null)
           setRole(null)
-          setLoading(false)
+          finishLoading()
           return
         }
 
@@ -60,14 +75,13 @@ export function AuthProvider({ children }) {
         setSession(freshSession)
         setUser(validatedUser)
         await fetchProfile(validatedUser.id)
+        finishLoading()
       } catch (err) {
         console.error('Auth init failed:', err)
-        setAuthError('Failed to connect. Please try again.')
         setUser(null)
         setSession(null)
         setRole(null)
-      } finally {
-        setLoading(false)
+        finishLoading('Failed to connect. Please try again.')
       }
     }
 
@@ -83,10 +97,14 @@ export function AuthProvider({ children }) {
         } else {
           setRole(null)
         }
+        finishLoading()
       }
     )
 
-    return () => subscription.unsubscribe()
+    return () => {
+      clearTimeout(timeout)
+      subscription.unsubscribe()
+    }
   }, [])
 
   async function signIn(email, password) {
