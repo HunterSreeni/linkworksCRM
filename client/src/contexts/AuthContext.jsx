@@ -20,24 +20,33 @@ export function AuthProvider({ children }) {
     setLoading(false)
   }
 
+  // Fetch profile separately - NEVER call this inside onAuthStateChange.
+  // Calling Supabase queries inside the auth callback creates a deadlock
+  // with the internal token refresh lock (supabase-js#2126).
   async function fetchProfile(userId) {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', userId)
-      .single()
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', userId)
+        .single()
 
-    if (error) {
-      console.error('Failed to fetch profile:', error.message)
+      if (error) {
+        console.error('Failed to fetch profile:', error.message)
+        setRole('member')
+        return
+      }
+
+      setRole(data?.role || 'member')
+    } catch {
       setRole('member')
-      return
     }
-
-    setRole(data?.role || 'member')
   }
 
+  // Effect 1: Initialize session and listen for auth changes.
+  // The onAuthStateChange callback ONLY updates session/user state.
+  // No Supabase DB queries inside the callback - this is critical.
   useEffect(() => {
-    // Failsafe: show retry + sign out modal if auth hangs beyond 10s
     const timeout = setTimeout(() => {
       if (!resolved.current) {
         console.warn('Auth loading timed out after', AUTH_TIMEOUT_MS, 'ms')
@@ -45,26 +54,29 @@ export function AuthProvider({ children }) {
       }
     }, AUTH_TIMEOUT_MS)
 
-    // onAuthStateChange with INITIAL_SESSION is the correct way to init auth.
-    // The Supabase client automatically refreshes the access_token using the
-    // refresh_token before firing INITIAL_SESSION. So by the time the callback
-    // runs, the session has a valid (non-expired) access_token.
+    // Step 1: Get initial session (handles token refresh internally)
+    supabase.auth.getSession().then(({ data: { session: s } }) => {
+      setSession(s)
+      setUser(s?.user ?? null)
+      if (!s?.user) {
+        finishLoading()
+      }
+      // If user exists, Effect 2 will handle fetchProfile + finishLoading
+    }).catch((err) => {
+      console.error('getSession failed:', err)
+      finishLoading('Failed to connect. Please try again.')
+    })
+
+    // Step 2: Listen for auth state changes (sign in, sign out, token refresh)
+    // Keep this callback LIGHTWEIGHT - only update React state, nothing else.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, s) => {
+      (event, s) => {
         setSession(s)
         setUser(s?.user ?? null)
+        setAuthError(null)
 
-        if (s?.user) {
-          await fetchProfile(s.user.id)
-        } else {
+        if (event === 'SIGNED_OUT') {
           setRole(null)
-        }
-
-        // INITIAL_SESSION fires once on startup (after token refresh if needed).
-        // Also finish loading on SIGNED_IN / SIGNED_OUT / TOKEN_REFRESHED so
-        // the UI always unblocks.
-        if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
-          setAuthError(null)
           finishLoading()
         }
       }
@@ -75,6 +87,20 @@ export function AuthProvider({ children }) {
       subscription.unsubscribe()
     }
   }, [])
+
+  // Effect 2: Fetch profile whenever user changes.
+  // This runs OUTSIDE the auth callback, avoiding the deadlock.
+  // Uses setTimeout(0) to defer the Supabase DB call out of any
+  // auth lock that might still be held during initialization.
+  useEffect(() => {
+    if (!user) return
+
+    const deferred = setTimeout(() => {
+      fetchProfile(user.id).then(() => finishLoading())
+    }, 0)
+
+    return () => clearTimeout(deferred)
+  }, [user?.id])
 
   async function signIn(email, password) {
     const { data, error } = await supabase.auth.signInWithPassword({
