@@ -17,6 +17,7 @@ import {
   ChevronRight,
 } from 'lucide-react'
 import { useState } from 'react'
+import { APP_VERSION } from '../lib/version.js'
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -88,8 +89,13 @@ export default function Layout() {
           ))}
         </nav>
 
-        {/* Sign out */}
+        {/* Version + Sign out */}
         <div className="px-2 py-3 border-t border-amber-500/30">
+          {!collapsed && (
+            <div className="px-3 pb-2 text-xs text-amber-800/60">v{APP_VERSION}</div>
+          )}
+        </div>
+        <div className="px-2 pb-3">
           <button
             onClick={handleSignOut}
             className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-800 hover:bg-amber-500/30 w-full"
