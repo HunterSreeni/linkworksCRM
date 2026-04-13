@@ -1,9 +1,7 @@
-import { createContext, useContext, useEffect, useState, useRef } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 
 const AuthContext = createContext(null)
-
-const PROFILE_TIMEOUT_MS = 5000
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
@@ -11,29 +9,27 @@ export function AuthProvider({ children }) {
   const [role, setRole] = useState(null)
   const [loading, setLoading] = useState(true)
   const [authError, setAuthError] = useState(null)
-  const loadingResolved = useRef(false)
 
-  function finishLoading(error = null) {
-    if (loadingResolved.current) return
-    loadingResolved.current = true
-    if (error) setAuthError(error)
-    setLoading(false)
-  }
+  async function fetchProfile(userId) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', userId)
+      .single()
 
-  async function fetchProfileWithTimeout(userId) {
-    try {
-      const result = await Promise.race([
-        supabase.from('profiles').select('role').eq('id', userId).single(),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('timeout')), PROFILE_TIMEOUT_MS)
-        ),
-      ])
-      if (result.error) throw result.error
-      setRole(result.data?.role || 'member')
-    } catch {
-      // Profile fetch failed or timed out - default to member and move on
-      setRole('member')
+    if (error) {
+      console.error('Failed to fetch profile:', error.message)
+      // If profile fetch fails (bad key, RLS, network), sign out so the user
+      // lands on the login page instead of being stuck with a broken session
+      await supabase.auth.signOut().catch(() => {})
+      setUser(null)
+      setSession(null)
+      setRole(null)
+      setAuthError('Failed to load your profile. Please sign in again.')
+      return
     }
+
+    setRole(data?.role || 'member')
   }
 
   useEffect(() => {
@@ -41,16 +37,17 @@ export function AuthProvider({ children }) {
       setSession(s)
       setUser(s?.user ?? null)
       if (s?.user) {
-        fetchProfileWithTimeout(s.user.id).finally(() => finishLoading())
+        fetchProfile(s.user.id).finally(() => setLoading(false))
       } else {
-        finishLoading()
+        setLoading(false)
       }
     }).catch((err) => {
       console.error('Failed to load session:', err)
       setUser(null)
       setSession(null)
       setRole(null)
-      finishLoading('Failed to connect. Please try again.')
+      setAuthError('Failed to connect. Please try again.')
+      setLoading(false)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -59,11 +56,11 @@ export function AuthProvider({ children }) {
         setUser(s?.user ?? null)
         setAuthError(null)
         if (s?.user) {
-          await fetchProfileWithTimeout(s.user.id)
+          await fetchProfile(s.user.id)
         } else {
           setRole(null)
         }
-        finishLoading()
+        setLoading(false)
       }
     )
 

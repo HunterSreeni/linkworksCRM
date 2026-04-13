@@ -2,7 +2,7 @@ import { Navigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function ProtectedRoute({ children, adminOnly = false }) {
-  const { user, role, loading, authError } = useAuth()
+  const { user, role, loading, authError, signOut } = useAuth()
 
   if (loading) {
     return (
@@ -19,12 +19,23 @@ export default function ProtectedRoute({ children, adminOnly = false }) {
           <div className="text-red-500 text-4xl mb-4">!</div>
           <h2 className="text-lg font-semibold text-gray-800 mb-2">Something went wrong</h2>
           <p className="text-sm text-gray-500 mb-6">{authError}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100"
-          >
-            Retry
-          </button>
+          <div className="flex gap-3 justify-center">
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100"
+            >
+              Retry
+            </button>
+            <button
+              onClick={async () => {
+                await signOut().catch(() => {})
+                window.location.href = '/login'
+              }}
+              className="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
       </div>
     )
