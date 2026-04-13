@@ -37,7 +37,7 @@ export function AuthProvider({ children }) {
   }
 
   useEffect(() => {
-    // Failsafe: if auth init hangs for any reason, show error modal after 10s
+    // Failsafe: show retry + sign out modal if auth hangs beyond 10s
     const timeout = setTimeout(() => {
       if (!resolved.current) {
         console.warn('Auth loading timed out after', AUTH_TIMEOUT_MS, 'ms')
@@ -45,59 +45,28 @@ export function AuthProvider({ children }) {
       }
     }, AUTH_TIMEOUT_MS)
 
-    async function initAuth() {
-      try {
-        // Step 1: Check if a session exists in localStorage
-        const { data: { session: storedSession } } = await supabase.auth.getSession()
-
-        if (!storedSession) {
-          finishLoading()
-          return
-        }
-
-        // Step 2: Validate the token with Supabase server.
-        // getSession() returns the token from localStorage WITHOUT refreshing it.
-        // getUser() will use the refresh_token to get a fresh access_token if expired.
-        const { data: { user: validatedUser }, error: userError } = await supabase.auth.getUser()
-
-        if (userError || !validatedUser) {
-          console.error('Session expired:', userError?.message)
-          await supabase.auth.signOut().catch(() => {})
-          setUser(null)
-          setSession(null)
-          setRole(null)
-          finishLoading()
-          return
-        }
-
-        // Step 3: Token is valid/refreshed, now fetch the profile
-        const { data: { session: freshSession } } = await supabase.auth.getSession()
-        setSession(freshSession)
-        setUser(validatedUser)
-        await fetchProfile(validatedUser.id)
-        finishLoading()
-      } catch (err) {
-        console.error('Auth init failed:', err)
-        setUser(null)
-        setSession(null)
-        setRole(null)
-        finishLoading('Failed to connect. Please try again.')
-      }
-    }
-
-    initAuth()
-
+    // onAuthStateChange with INITIAL_SESSION is the correct way to init auth.
+    // The Supabase client automatically refreshes the access_token using the
+    // refresh_token before firing INITIAL_SESSION. So by the time the callback
+    // runs, the session has a valid (non-expired) access_token.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, s) => {
+      async (event, s) => {
         setSession(s)
         setUser(s?.user ?? null)
-        setAuthError(null)
+
         if (s?.user) {
           await fetchProfile(s.user.id)
         } else {
           setRole(null)
         }
-        finishLoading()
+
+        // INITIAL_SESSION fires once on startup (after token refresh if needed).
+        // Also finish loading on SIGNED_IN / SIGNED_OUT / TOKEN_REFRESHED so
+        // the UI always unblocks.
+        if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
+          setAuthError(null)
+          finishLoading()
+        }
       }
     )
 
