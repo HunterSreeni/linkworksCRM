@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 
 const AuthContext = createContext(null)
 
-const AUTH_TIMEOUT_MS = 8000
+const PROFILE_TIMEOUT_MS = 5000
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
@@ -20,35 +20,28 @@ export function AuthProvider({ children }) {
     setLoading(false)
   }
 
-  async function fetchProfile(userId) {
+  async function fetchProfileWithTimeout(userId) {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', userId)
-        .single()
-
-      if (error) throw error
-      setRole(data?.role || 'member')
+      const result = await Promise.race([
+        supabase.from('profiles').select('role').eq('id', userId).single(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), PROFILE_TIMEOUT_MS)
+        ),
+      ])
+      if (result.error) throw result.error
+      setRole(result.data?.role || 'member')
     } catch {
+      // Profile fetch failed or timed out - default to member and move on
       setRole('member')
     }
   }
 
   useEffect(() => {
-    // Hard timeout - never spin longer than AUTH_TIMEOUT_MS no matter what
-    const timeout = setTimeout(() => {
-      if (!loadingResolved.current) {
-        console.warn('Auth loading timed out after', AUTH_TIMEOUT_MS, 'ms')
-        finishLoading('Connection timed out. Please try again.')
-      }
-    }, AUTH_TIMEOUT_MS)
-
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s)
       setUser(s?.user ?? null)
       if (s?.user) {
-        fetchProfile(s.user.id).finally(() => finishLoading())
+        fetchProfileWithTimeout(s.user.id).finally(() => finishLoading())
       } else {
         finishLoading()
       }
@@ -66,7 +59,7 @@ export function AuthProvider({ children }) {
         setUser(s?.user ?? null)
         setAuthError(null)
         if (s?.user) {
-          await fetchProfile(s.user.id)
+          await fetchProfileWithTimeout(s.user.id)
         } else {
           setRole(null)
         }
@@ -74,10 +67,7 @@ export function AuthProvider({ children }) {
       }
     )
 
-    return () => {
-      clearTimeout(timeout)
-      subscription.unsubscribe()
-    }
+    return () => subscription.unsubscribe()
   }, [])
 
   async function signIn(email, password) {
