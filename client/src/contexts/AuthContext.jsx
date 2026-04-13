@@ -19,13 +19,7 @@ export function AuthProvider({ children }) {
 
     if (error) {
       console.error('Failed to fetch profile:', error.message)
-      // If profile fetch fails (bad key, RLS, network), sign out so the user
-      // lands on the login page instead of being stuck with a broken session
-      await supabase.auth.signOut().catch(() => {})
-      setUser(null)
-      setSession(null)
-      setRole(null)
-      setAuthError('Failed to load your profile. Please sign in again.')
+      setRole('member')
       return
     }
 
@@ -33,22 +27,51 @@ export function AuthProvider({ children }) {
   }
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s)
-      setUser(s?.user ?? null)
-      if (s?.user) {
-        fetchProfile(s.user.id).finally(() => setLoading(false))
-      } else {
+    async function initAuth() {
+      try {
+        // Step 1: Check if a session exists in localStorage
+        const { data: { session: storedSession } } = await supabase.auth.getSession()
+
+        if (!storedSession) {
+          // No session at all - not logged in
+          setLoading(false)
+          return
+        }
+
+        // Step 2: Validate the token with Supabase server.
+        // getSession() returns the token from localStorage WITHOUT refreshing it.
+        // If the access_token is expired, getUser() will use the refresh_token
+        // to get a fresh access_token before returning.
+        const { data: { user: validatedUser }, error: userError } = await supabase.auth.getUser()
+
+        if (userError || !validatedUser) {
+          // Refresh token is also expired or invalid - session is dead
+          console.error('Session expired:', userError?.message)
+          await supabase.auth.signOut().catch(() => {})
+          setUser(null)
+          setSession(null)
+          setRole(null)
+          setLoading(false)
+          return
+        }
+
+        // Step 3: Token is valid/refreshed, now fetch the profile
+        const { data: { session: freshSession } } = await supabase.auth.getSession()
+        setSession(freshSession)
+        setUser(validatedUser)
+        await fetchProfile(validatedUser.id)
+      } catch (err) {
+        console.error('Auth init failed:', err)
+        setAuthError('Failed to connect. Please try again.')
+        setUser(null)
+        setSession(null)
+        setRole(null)
+      } finally {
         setLoading(false)
       }
-    }).catch((err) => {
-      console.error('Failed to load session:', err)
-      setUser(null)
-      setSession(null)
-      setRole(null)
-      setAuthError('Failed to connect. Please try again.')
-      setLoading(false)
-    })
+    }
+
+    initAuth()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, s) => {
@@ -60,7 +83,6 @@ export function AuthProvider({ children }) {
         } else {
           setRole(null)
         }
-        setLoading(false)
       }
     )
 
