@@ -66,31 +66,59 @@ Each Supabase query has ~300-900ms network latency from Vercel to Supabase. 24 q
 2. Adding a hard timeout (8s) - masked the problem, caused a retry loop because the underlying issue persisted on every reload
 3. Using `getUser()` instead of `getSession()` - `getUser()` also does NOT refresh tokens; it just validates the current access token and returns 403 if expired. This made normal refreshes fail too.
 
-**What fixed it:** Using `onAuthStateChange` with the `INITIAL_SESSION` event (Supabase JS v2.39+):
-```javascript
-supabase.auth.onAuthStateChange(async (event, session) => {
-  if (event === 'INITIAL_SESSION') {
-    // Token is already refreshed by this point
-    // Safe to fetch profile and set loading = false
-  }
-})
-```
+**What did NOT work (attempt 4):** Using `onAuthStateChange` with `INITIAL_SESSION` and calling `fetchProfile()` inside the callback. This caused a **deadlock** - the `onAuthStateChange` callback fires while the Supabase internal auth lock is held, and calling `supabase.from('profiles').select(...)` inside it queues operations that re-trigger the token refresh cycle, causing a cascade of `TOKEN_REFRESHED` events followed by `SIGNED_OUT`. This is a documented issue: [supabase/supabase-js#2126](https://github.com/supabase/supabase-js/issues/2126).
 
-The Supabase client automatically refreshes the access token using the refresh token BEFORE firing `INITIAL_SESSION`. By the time the callback runs, the session has a valid (non-expired) access token - or is `null` if the refresh token is also dead.
+**What fixed it:** Two key changes based on the Supabase maintainer's guidance:
+
+1. **Keep `onAuthStateChange` callback side-effect-free.** Only update React state (session, user) - absolutely no Supabase DB queries inside the callback.
+
+2. **Move `fetchProfile()` to a separate `useEffect`** that triggers on `user.id` change, with `setTimeout(0)` to defer the call out of any auth lock:
+
+```javascript
+// Effect 1: Session init + auth listener (NO Supabase queries in callback)
+useEffect(() => {
+  supabase.auth.getSession().then(({ data: { session } }) => {
+    setSession(session)
+    setUser(session?.user ?? null)
+    if (!session?.user) setLoading(false)
+  })
+
+  const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    (event, session) => {
+      setSession(session)           // ONLY state updates
+      setUser(session?.user ?? null) // NO supabase.from() calls
+      if (event === 'SIGNED_OUT') setRole(null)
+    }
+  )
+  return () => subscription.unsubscribe()
+}, [])
+
+// Effect 2: Fetch profile OUTSIDE the auth callback
+useEffect(() => {
+  if (!user) return
+  const deferred = setTimeout(() => {
+    fetchProfile(user.id).then(() => setLoading(false))
+  }, 0)
+  return () => clearTimeout(deferred)
+}, [user?.id])
+```
 
 **Failsafe:** A 10-second timeout shows a "Something went wrong" modal with Retry and Sign out buttons if auth initialization hangs for any reason (network issues, Supabase downtime, etc.).
 
 **File changed:** `client/src/contexts/AuthContext.jsx`
 
 **How to verify:**
-1. Log in, wait 1+ hours (or manually expire the token), refresh - should load normally
-2. Kill network, refresh - should show error modal after 10 seconds with Retry + Sign out
+1. Log in, refresh the page - should load dashboard without the error modal
+2. Log in, wait 1+ hours, refresh - should load normally (token auto-refreshed)
+3. Kill network, refresh - should show error modal after 10 seconds with Retry + Sign out
 
-**Lesson:** 
-- `getSession()` does NOT refresh tokens - it reads from localStorage as-is
-- `getUser()` does NOT refresh tokens - it validates the current access token
-- `onAuthStateChange` with `INITIAL_SESSION` is the Supabase-recommended pattern for initializing auth state, because the client handles token refresh internally before firing the event
+**Lesson:**
+- **NEVER** call Supabase DB queries (`supabase.from(...)`) or auth methods (`getSession()`, `getUser()`) inside `onAuthStateChange` - it causes a deadlock with the internal token refresh lock
+- `onAuthStateChange` callback must ONLY update React state
+- Defer Supabase queries to a separate `useEffect` with `setTimeout(0)` to break out of the lock
+- `getSession()` handles initial session retrieval and token refresh
 - Always have a failsafe timeout for auth initialization
+- Reference: [supabase/supabase-js#2126](https://github.com/supabase/supabase-js/issues/2126), [supabase/supabase#41968](https://github.com/supabase/supabase/issues/41968)
 
 ---
 
