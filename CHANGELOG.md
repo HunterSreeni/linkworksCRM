@@ -8,6 +8,27 @@ Format follows [Semantic Versioning](https://semver.org/):
 
 ---
 
+## [0.1.6] - 2026-04-15 (Pagination + DB watermark)
+
+### Added
+- **Pagination on Bookings Intake** - Page size 25 (configurable via `PAGE_SIZE` const at the top of `BookingsIntake.jsx`). Pagination footer shows `Page X of Y - N total` with Prev/Next buttons. Backend `/api/requests` already accepted `page` and `limit` query params; the UI now uses them and reads `pagination.pages` / `pagination.total` from the response. Refresh inbox jumps back to page 1 so newly polled emails are visible.
+- **Migration `0001_emails_imap_uid.sql`** - New `server/supabase/migrations/` folder with a numbered migration adding the `imap_uid INTEGER` column on `emails` plus an index `idx_emails_imap_uid_desc`. Run once in the Supabase SQL editor before deploying v0.1.6.
+
+### Changed
+- **Poll watermark moved from RAM to DB** - Removed the in-memory `lastSeenUid` variable. `pollCycle` now calls `getWatermark()` which runs `SELECT imap_uid FROM emails WHERE imap_uid IS NOT NULL ORDER BY imap_uid DESC LIMIT 1`. Survives server restarts, DB truncates, and any other state desync. Each new email's `imap_uid` is stored on insert.
+- **`resetPollerState()` is now a no-op** - The endpoint `/api/emails/poll { reset: true }` still exists for backwards compat but does nothing - there is no in-memory state to reset. To force a re-fetch from a specific UID, manually wipe rows from `emails` (the watermark drops to 0 automatically).
+
+### Why
+Production won't have this problem - Microsoft Graph webhooks push events with stable IDs, no UID tracking needed. This fix is for the test path so Balaji's UAT doesn't keep desyncing after DB wipes / restarts. Pagination is a general scalability fix; a real shared inbox at the client may have hundreds of drafts pending review on day one of go-live.
+
+### Migration step (run once before pulling v0.1.6 server code)
+```sql
+ALTER TABLE emails ADD COLUMN IF NOT EXISTS imap_uid INTEGER;
+CREATE INDEX IF NOT EXISTS idx_emails_imap_uid_desc ON emails(imap_uid DESC NULLS LAST);
+```
+
+---
+
 ## [0.1.5] - 2026-04-15 (Server stability)
 
 ### Fixed

@@ -63,6 +63,7 @@ COMMENT ON TABLE profiles IS 'User profiles extending Supabase auth.users';
 CREATE TABLE emails (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   graph_message_id  TEXT UNIQUE,
+  imap_uid          INTEGER,
   thread_id         TEXT,
   direction         email_direction NOT NULL,
   classification    email_classification DEFAULT 'unclassified',
@@ -217,6 +218,7 @@ CREATE INDEX idx_emails_thread_id ON emails(thread_id);
 CREATE INDEX idx_emails_direction ON emails(direction);
 CREATE INDEX idx_emails_classification ON emails(classification);
 CREATE INDEX idx_emails_received_at ON emails(received_at);
+CREATE INDEX idx_emails_imap_uid_desc ON emails(imap_uid DESC NULLS LAST);
 
 -- requests indexes
 CREATE INDEX idx_requests_docket_number ON requests(docket_number);

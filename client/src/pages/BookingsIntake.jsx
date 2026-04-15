@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
-import { Inbox, CheckCircle, AlertTriangle, XCircle, Users, RefreshCw } from 'lucide-react'
+import { Inbox, CheckCircle, AlertTriangle, XCircle, Users, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react'
+
+const PAGE_SIZE = 25
 
 function ConfidenceBadge({ level }) {
   if (level === 'high')
@@ -21,18 +23,23 @@ export default function BookingsIntake() {
   const [teamMembers, setTeamMembers] = useState([])
   const [assignTo, setAssignTo] = useState('')
   const [polling, setPolling] = useState(false)
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalCount, setTotalCount] = useState(0)
   const navigate = useNavigate()
   const { user } = useAuth()
 
-  async function fetchData() {
+  async function fetchData(pageNum = page) {
     try {
       setLoading(true)
       const [res, team] = await Promise.all([
-        api.get('/requests?status=draft'),
+        api.get(`/requests?status=draft&page=${pageNum}&limit=${PAGE_SIZE}`),
         api.get('/users').catch(() => ({ users: [] })),
       ])
       setRequests(res?.requests || res?.data || [])
       setTeamMembers(team?.users || team?.data || [])
+      setTotalPages(res?.pagination?.pages || 1)
+      setTotalCount(res?.pagination?.total || 0)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -41,15 +48,20 @@ export default function BookingsIntake() {
   }
 
   useEffect(() => {
-    fetchData()
-  }, [])
+    fetchData(page)
+  }, [page])
 
   async function handlePoll() {
     setPolling(true)
     setError('')
     try {
       await api.post('/emails/poll', {})
-      await fetchData()
+      // Reset to page 1 so newly polled emails are visible at the top.
+      if (page !== 1) {
+        setPage(1)
+      } else {
+        await fetchData(1)
+      }
     } catch (err) {
       setError(err.message || 'Poll failed')
     } finally {
@@ -247,6 +259,32 @@ export default function BookingsIntake() {
               ))}
             </tbody>
           </table>
+        )}
+
+        {totalPages > 1 && (
+          <div className="px-4 py-3 border-t border-gray-200 flex items-center justify-between text-sm">
+            <div className="text-gray-500">
+              Page {page} of {totalPages} - {totalCount} total
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1 || loading}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft size={14} />
+                Prev
+              </button>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages || loading}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Next
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>

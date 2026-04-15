@@ -47,8 +47,27 @@ function normaliseVehicle(raw, fullText) {
 }
 
 let pollingInterval = null;
-let lastSeenUid = 0;
 let isPolling = false;
+
+/**
+ * Read the high watermark from the DB - the highest IMAP UID we've already
+ * stored. Survives restarts, DB wipes, and accidental in-memory state loss.
+ * Returns 0 if no emails have an imap_uid yet (e.g. fresh DB or first poll).
+ */
+async function getWatermark() {
+  const { data, error } = await supabaseAdmin
+    .from('emails')
+    .select('imap_uid')
+    .not('imap_uid', 'is', null)
+    .order('imap_uid', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.error('[Poller] Failed to read watermark, defaulting to 0:', error.message);
+    return 0;
+  }
+  return data?.imap_uid || 0;
+}
 
 /**
  * Process a single fetched email.
@@ -75,6 +94,7 @@ async function processEmail(email) {
     const emailRecord = {
       id: emailId,
       graph_message_id: email.message_id || null,
+      imap_uid: email.uid || null,
       thread_id: email.in_reply_to || null,
       direction: 'inbound',
       classification: 'unclassified',
@@ -203,12 +223,18 @@ async function processEmail(email) {
 }
 
 /**
- * Run a single poll cycle - connect, fetch, process, disconnect.
+ * v0.1.6: kept for backwards compat with the manual /api/emails/poll
+ * endpoint's `{ reset: true }` flag. With the DB watermark there's no
+ * in-memory state to reset - this is now a no-op. Leave the export so
+ * the route doesn't error.
  */
 export function resetPollerState() {
-  lastSeenUid = 0;
+  // No-op since v0.1.6 - watermark lives in the emails.imap_uid column.
 }
 
+/**
+ * Run a single poll cycle - read DB watermark, connect, fetch, process, disconnect.
+ */
 export async function pollCycle() {
   if (isPolling) {
     console.log('[Poller] Previous poll still running, skipping');
@@ -219,18 +245,14 @@ export async function pollCycle() {
   const adapter = getEmailAdapter();
 
   try {
+    const watermark = await getWatermark();
     await adapter.connect();
 
-    const emails = await adapter.fetchNewEmails(lastSeenUid);
-    console.log(`[Poller] Fetched ${emails.length} new email(s)`);
+    const emails = await adapter.fetchNewEmails(watermark);
+    console.log(`[Poller] Fetched ${emails.length} new email(s) (watermark UID ${watermark})`);
 
     for (const email of emails) {
       await processEmail(email);
-
-      // Track the highest UID seen
-      if (email.uid && email.uid > lastSeenUid) {
-        lastSeenUid = email.uid;
-      }
     }
 
     await adapter.disconnect();
