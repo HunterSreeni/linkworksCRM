@@ -8,6 +8,17 @@ Format follows [Semantic Versioning](https://semver.org/):
 
 ---
 
+## [0.1.5] - 2026-04-15 (Server stability)
+
+### Fixed
+- **Server crash on IMAP socket timeout** - `imapflow` emits an asynchronous `error` event on its underlying TLS socket when Gmail drops idle connections (timeout / EPIPE). With no listener attached, Node's default behavior is to terminate the process (`Error: Socket timeout` -> `[nodemon] app crashed`). Added a `client.on('error', ...)` listener in `server/src/services/email/adapter.js` that logs and lets the next poll cycle reconnect.
+- **Process-level safety nets** - Added `process.on('unhandledRejection')` and `process.on('uncaughtException')` handlers in `server/src/index.js`. Any future async error anywhere in the codebase is logged instead of killing the process. Note: these are belt-and-braces - they don't substitute for fixing the actual error source, just prevent dev-time crashes during UAT.
+
+### Why
+This is a test-path concern only - production will use Microsoft Graph webhooks with no long-lived IMAP socket. Fixing it anyway because UAT needs a stable local server for Balaji to demo the flow without restarting `npm run dev` every few minutes.
+
+---
+
 ## [0.1.4] - 2026-04-15 (Raw email mode)
 
 The parser rework is deferred to v0.2.0. For v0.1.4 we simplify the pipeline: every inbound email becomes a Draft request carrying the full raw body, the user fills details manually.

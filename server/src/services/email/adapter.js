@@ -58,6 +58,13 @@ class ImapAdapter extends EmailAdapter {
       logger: false,
     });
 
+    // ImapFlow emits 'error' asynchronously on the underlying socket (e.g.
+    // timeout, EPIPE). An unhandled 'error' event crashes the Node process,
+    // so attach a listener that logs and lets the next poll cycle reconnect.
+    this.client.on('error', (err) => {
+      console.error('[IMAP] Client error (will reconnect on next poll):', err?.message || err);
+    });
+
     await this.client.connect();
     console.log('[IMAP] Connected to', process.env.IMAP_HOST);
   }

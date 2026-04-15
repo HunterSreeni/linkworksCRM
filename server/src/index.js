@@ -52,6 +52,16 @@ app.use((err, req, res, _next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
+// Process-level safety nets. Without these, an async error anywhere
+// (most commonly the IMAP socket timing out) crashes the Node process.
+// We log and keep running - the next poll cycle reconnects.
+process.on('unhandledRejection', (reason) => {
+  console.error('[Process] Unhandled rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[Process] Uncaught exception:', err?.message || err);
+});
+
 // Only start server when running directly (not on Vercel)
 if (!process.env.VERCEL) {
   app.listen(PORT, () => {

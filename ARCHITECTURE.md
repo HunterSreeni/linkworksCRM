@@ -165,6 +165,27 @@ cd server && npm run seed -- --clear  # clear + re-seed
 
 ---
 
+## Mail Sources - Test vs Production
+
+The system has **two mail source adapters**, and which one runs depends on the environment. This distinction matters for deployment, cost modelling, and state design:
+
+| Environment | Source | Mechanism | Where it runs |
+|-------------|--------|-----------|----------------|
+| **Production** | Single Microsoft 365 shared mailbox | Graph API change notifications (webhooks) | Netlify function endpoint receives pushed events |
+| **UAT / local testing only** | Gmail inbox (`daily.test4@gmail.com`) | IMAP polling with app password | Balaji's local machine during UAT |
+
+**Key design consequence:** IMAP polling is scaffolding. It is only active when `EMAIL_POLLING_ENABLED=true` and the IMAP credentials are present in `server/.env`. It is **not** expected to run in the deployed production environment.
+
+**Implications:**
+- No always-on worker is required in production. Netlify free tier is sufficient because webhooks are push-based (~100-500 invocations/month from mail events).
+- In-memory polling state (like the historical `lastSeenUid` variable) is a test-path concern; the webhook path doesn't accumulate state between events.
+- When Azure AD / Graph credentials arrive from the client, the Graph adapter becomes the sole production path. IMAP stays in the codebase purely to support local UAT and future test environments.
+- Feature design, pricing estimates, and performance discussions should assume Graph webhooks as the baseline, not polling.
+
+For the deferred Netlify hosting migration, see `NETLIFY_MIGRATION.md`.
+
+---
+
 ## Vercel Deployment
 
 The app deploys to Vercel as:
