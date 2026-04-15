@@ -42,7 +42,10 @@ router.get('/', authenticate, async (req, res) => {
 
     let query = supabaseAdmin
       .from('requests')
-      .select('*', { count: 'exact' })
+      .select(
+        '*, inbound_email:emails!inbound_email_id(subject,from_address,to_address,received_at)',
+        { count: 'exact' }
+      )
       .order('created_at', { ascending: false })
       .range(offset, offset + parseInt(limit) - 1);
 

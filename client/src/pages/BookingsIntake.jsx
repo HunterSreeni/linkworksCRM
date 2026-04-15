@@ -225,14 +225,16 @@ export default function BookingsIntake() {
                     />
                   </td>
                   <td className="px-4 py-3 text-sm font-medium text-gray-800">
-                    {req.email_subject || 'No subject'}
+                    {req.inbound_email?.subject || 'No subject'}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">
-                    {req.email_from || '-'}
+                    {req.inbound_email?.from_address || '-'}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-500">
-                    {req.received_at
-                      ? new Date(req.received_at).toLocaleString()
+                    {req.inbound_email?.received_at
+                      ? new Date(req.inbound_email.received_at).toLocaleString()
+                      : req.created_at
+                      ? new Date(req.created_at).toLocaleString()
                       : '-'}
                   </td>
                   <td className="px-4 py-3">

@@ -25,7 +25,8 @@ const navItems = [
   { to: '/processing', label: 'Processing Tracker', icon: Settings },
   { to: '/output', label: 'Output Tracker', icon: PackageCheck },
   { to: '/quality', label: 'Quality', icon: Shield },
-  { to: '/triage', label: 'Triage Queue', icon: AlertCircle },
+  // TODO(v0.2.0): re-enable Triage Queue when LLM parser + classifier return.
+  // { to: '/triage', label: 'Triage Queue', icon: AlertCircle },
   { to: '/pricing', label: 'Pricing Information', icon: DollarSign, adminOnly: true },
   { to: '/team', label: 'Team Management', icon: Users, adminOnly: true },
   { to: '/templates', label: 'Templates', icon: FileText, adminOnly: true },

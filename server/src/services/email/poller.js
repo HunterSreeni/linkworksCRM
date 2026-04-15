@@ -1,9 +1,10 @@
 import { v4 as uuidv4 } from 'uuid';
 import { supabaseAdmin } from '../../config/supabase.js';
 import { getEmailAdapter } from './adapter.js';
-import { classifyEmail } from './classifier.js';
-import { extractFromEmail } from './parser.js';
-import { parseAttachmentContent } from '../attachmentParser.js';
+// TODO(v0.2.0): re-enable when LLM parser middleware lands
+// import { classifyEmail } from './classifier.js';
+// import { extractFromEmail } from './parser.js';
+// import { parseAttachmentContent } from '../attachmentParser.js';
 
 const MONTHS = [
   'january', 'february', 'march', 'april', 'may', 'june',
@@ -50,14 +51,25 @@ let lastSeenUid = 0;
 let isPolling = false;
 
 /**
- * Process a single fetched email - classify, parse, create records.
+ * Process a single fetched email.
+ *
+ * v0.1.4 "Raw email mode": store the email + its attachment metadata, then
+ * unconditionally create a Draft request linked back via inbound_email_id.
+ * All structured extraction fields are left null; the user reads the raw
+ * body on the request detail page and fills them in manually.
+ *
+ * The classifier, regex extractor, and attachment text parser are
+ * intentionally commented (not removed) and will be re-enabled in v0.2.0
+ * once the LLM parser middleware lands.
  */
 async function processEmail(email) {
   try {
     const emailId = uuidv4();
 
-    // Classify the email
-    const { classification, reason } = classifyEmail(email);
+    // TODO(v0.2.0): re-enable classifier routing once LLM parser can emit
+    // a confidence score for "is this a booking?". For v0.1.4 every email
+    // becomes a Draft request and the classification column stays 'unclassified'.
+    // const { classification, reason } = classifyEmail(email);
 
     // Store the email record (matching emails table schema)
     const emailRecord = {
@@ -65,7 +77,7 @@ async function processEmail(email) {
       graph_message_id: email.message_id || null,
       thread_id: email.in_reply_to || null,
       direction: 'inbound',
-      classification,
+      classification: 'unclassified',
       subject: email.subject,
       from_address: email.from_address,
       to_address: email.to_address,
@@ -85,7 +97,7 @@ async function processEmail(email) {
       return;
     }
 
-    // Store attachments
+    // Store attachments (metadata only - content parsing disabled for v0.1.4)
     for (const att of email.attachments || []) {
       const attachmentRecord = {
         id: uuidv4(),
@@ -95,145 +107,96 @@ async function processEmail(email) {
         size: att.size,
         created_at: new Date().toISOString(),
       };
-
-      // Store attachment metadata (content would go to storage in production)
       await supabaseAdmin.from('attachments').insert(attachmentRecord);
     }
 
-    // Skip further processing for noise and bounce with no thread
-    if (classification === 'noise') {
-      console.log(`[Poller] Discarded noise email: ${email.subject}`);
+    // TODO(v0.2.0): restore classifier-driven routing. Kept as reference for
+    // when the LLM parser replaces the regex extraction layer.
+    //
+    // if (classification === 'noise') {
+    //   console.log(`[Poller] Discarded noise email: ${email.subject}`);
+    //   return;
+    // }
+    //
+    // if (classification === 'bounce' && email.in_reply_to) {
+    //   const { data: originalEmail } = await supabaseAdmin
+    //     .from('emails').select('id').eq('graph_message_id', email.in_reply_to).single();
+    //   if (originalEmail) {
+    //     const { data: linkedRequest } = await supabaseAdmin
+    //       .from('requests').select('id').eq('outbound_email_id', originalEmail.id).single();
+    //     if (linkedRequest) {
+    //       await supabaseAdmin.from('requests')
+    //         .update({ status: 'delivery_failed', updated_at: new Date().toISOString() })
+    //         .eq('id', linkedRequest.id).in('status', ['replied', 'processing']);
+    //       console.log(`[Poller] Bounce linked to request ${linkedRequest.id}`);
+    //     }
+    //   }
+    //   return;
+    // }
+    //
+    // if (classification === 'query' && email.in_reply_to) {
+    //   const { data: threadEmail } = await supabaseAdmin
+    //     .from('emails').select('id').eq('graph_message_id', email.in_reply_to).single();
+    //   if (threadEmail) {
+    //     const { data: linkedRequest } = await supabaseAdmin.from('requests').select('id')
+    //       .or(`inbound_email_id.eq.${threadEmail.id},outbound_email_id.eq.${threadEmail.id}`)
+    //       .limit(1).single();
+    //     if (linkedRequest) console.log(`[Poller] Query related to request ${linkedRequest.id}`);
+    //   }
+    //   return;
+    // }
+
+    // TODO(v0.2.0): restore regex + attachment extraction. Left here for reference.
+    //
+    // let extractedData = extractFromEmail(email.body_text);
+    // for (const att of email.attachments || []) {
+    //   try {
+    //     const attText = await parseAttachmentContent(att.content, att.content_type);
+    //     if (attText) {
+    //       const attData = extractFromEmail(attText);
+    //       for (const [key, val] of Object.entries(attData)) {
+    //         if (extractedData[key].confidence === 'missing' && val.confidence !== 'missing') {
+    //           extractedData[key] = val;
+    //         }
+    //       }
+    //     }
+    //   } catch (attErr) {
+    //     console.error(`[Poller] Failed to parse attachment ${att.filename}:`, attErr.message);
+    //   }
+    // }
+
+    // v0.1.4: create a Draft request for every email with null extraction fields.
+    // User reads the raw body on the request detail page and fills details manually.
+    const requestId = uuidv4();
+    const requestRecord = {
+      id: requestId,
+      inbound_email_id: emailId,
+      status: 'draft',
+      collection_address: null,
+      delivery_address: null,
+      collection_datetime: null,
+      delivery_datetime: null,
+      is_hazardous: null,
+      weight: null,
+      dimensions: null,
+      quantity: null,
+      vehicle: null,
+      customer_ref_number: null,
+      account_code: null,
+      docket_number: null,
+      assigned_to: null,
+      confirmed_by: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error: reqError } = await supabaseAdmin.from('requests').insert(requestRecord);
+    if (reqError) {
+      console.error(`[Poller] FAILED to create request from "${email.subject}":`, reqError.message);
       return;
     }
 
-    // For BOUNCE - try to link to original outbound email via thread_id
-    if (classification === 'bounce' && email.in_reply_to) {
-      const { data: originalEmail } = await supabaseAdmin
-        .from('emails')
-        .select('id')
-        .eq('graph_message_id', email.in_reply_to)
-        .single();
-
-      if (originalEmail) {
-        // Find the request that references this outbound email
-        const { data: linkedRequest } = await supabaseAdmin
-          .from('requests')
-          .select('id')
-          .eq('outbound_email_id', originalEmail.id)
-          .single();
-
-        if (linkedRequest) {
-          // Update request status to delivery_failed
-          await supabaseAdmin
-            .from('requests')
-            .update({
-              status: 'delivery_failed',
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', linkedRequest.id)
-            .in('status', ['replied', 'processing']);
-
-          console.log(`[Poller] Bounce linked to request ${linkedRequest.id}`);
-        }
-      }
-      return;
-    }
-
-    // For BOOKING - extract data and create a request
-    if (classification === 'booking') {
-      // Extract from email body
-      let extractedData = extractFromEmail(email.body_text);
-
-      // Also try extracting from attachments
-      for (const att of email.attachments || []) {
-        try {
-          const attText = await parseAttachmentContent(att.content, att.content_type);
-          if (attText) {
-            const attData = extractFromEmail(attText);
-            // Merge - fill in missing fields from attachment
-            for (const [key, val] of Object.entries(attData)) {
-              if (extractedData[key].confidence === 'missing' && val.confidence !== 'missing') {
-                extractedData[key] = val;
-              }
-            }
-          }
-        } catch (attErr) {
-          console.error(`[Poller] Failed to parse attachment ${att.filename}:`, attErr.message);
-        }
-      }
-
-      // Create a request from the extracted data (matching requests table schema)
-      const requestId = uuidv4();
-      const requestRecord = {
-        id: requestId,
-        inbound_email_id: emailId,
-        status: 'draft',
-        collection_address: extractedData.collection_address.value,
-        collection_address_confidence: extractedData.collection_address.confidence,
-        delivery_address: extractedData.delivery_address.value,
-        delivery_address_confidence: extractedData.delivery_address.confidence,
-        collection_datetime: toIsoTimestamp(extractedData.collection_date.value),
-        collection_datetime_confidence: extractedData.collection_date.confidence,
-        delivery_datetime: toIsoTimestamp(extractedData.delivery_date.value),
-        delivery_datetime_confidence: extractedData.delivery_date.confidence,
-        is_hazardous: extractedData.hazardous.value || false,
-        is_hazardous_confidence: extractedData.hazardous.confidence,
-        weight: extractedData.weight.value,
-        weight_confidence: extractedData.weight.confidence,
-        dimensions: extractedData.dimensions.value,
-        dimensions_confidence: extractedData.dimensions.confidence,
-        quantity: extractedData.quantity.value,
-        quantity_confidence: extractedData.quantity.confidence,
-        vehicle: normaliseVehicle(
-          extractedData.vehicle_type.value,
-          `${email.subject || ''} ${email.body_text || ''}`
-        ),
-        vehicle_confidence: extractedData.vehicle_type.confidence,
-        customer_ref_number: extractedData.customer_ref_number.value,
-        account_code: extractedData.account_code.value,
-        docket_number: null,
-        assigned_to: null,
-        confirmed_by: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-
-      const { error: reqError } = await supabaseAdmin.from('requests').insert(requestRecord);
-      if (reqError) {
-        console.error(`[Poller] FAILED to create request from "${email.subject}":`, reqError.message);
-        return;
-      }
-
-      console.log(`[Poller] Created request ${requestId} from booking email: ${email.subject}`);
-      return;
-    }
-
-    // For QUERY - try to link to existing request via thread
-    if (classification === 'query' && email.in_reply_to) {
-      const { data: threadEmail } = await supabaseAdmin
-        .from('emails')
-        .select('id')
-        .eq('graph_message_id', email.in_reply_to)
-        .single();
-
-      if (threadEmail) {
-        // Find a request that references this email as inbound or outbound
-        const { data: linkedRequest } = await supabaseAdmin
-          .from('requests')
-          .select('id')
-          .or(`inbound_email_id.eq.${threadEmail.id},outbound_email_id.eq.${threadEmail.id}`)
-          .limit(1)
-          .single();
-
-        if (linkedRequest) {
-          console.log(`[Poller] Query related to request ${linkedRequest.id}`);
-        }
-      }
-      return;
-    }
-
-    // UNCLASSIFIED - leave in triage queue (no request created, email stored)
-    console.log(`[Poller] Unclassified email stored for triage: ${email.subject}`);
+    console.log(`[Poller] Created request ${requestId} from: ${email.subject}`);
   } catch (err) {
     console.error('[Poller] Error processing email:', err);
   }

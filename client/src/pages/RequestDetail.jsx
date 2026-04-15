@@ -54,6 +54,8 @@ export default function RequestDetail() {
   const navigate = useNavigate()
   const [request, setRequest] = useState(null)
   const [formData, setFormData] = useState({})
+  const [emails, setEmails] = useState([])
+  const [attachments, setAttachments] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -75,6 +77,8 @@ export default function RequestDetail() {
         const requestData = res?.request || res
         setRequest(requestData)
         setFormData(requestData)
+        setEmails(res?.emails || [])
+        setAttachments(res?.attachments || [])
         const auditData = audit?.audit || audit?.data || []
         setAuditLog(Array.isArray(auditData) ? auditData : [])
       } catch (err) {
@@ -269,34 +273,38 @@ export default function RequestDetail() {
             <div className="text-xs text-gray-500 space-y-0.5 mt-2">
               <div>
                 <span className="font-medium">Subject:</span>{' '}
-                {request.email_subject || '-'}
+                {emails[0]?.subject || '-'}
               </div>
               <div>
                 <span className="font-medium">From:</span>{' '}
-                {request.email_from || '-'}
+                {emails[0]?.from_address || '-'}
+              </div>
+              <div>
+                <span className="font-medium">To:</span>{' '}
+                {emails[0]?.to_address || '-'}
               </div>
               <div>
                 <span className="font-medium">Received:</span>{' '}
-                {request.received_at
-                  ? new Date(request.received_at).toLocaleString()
+                {emails[0]?.received_at
+                  ? new Date(emails[0].received_at).toLocaleString()
                   : '-'}
               </div>
             </div>
           </div>
-          <div className="p-5 max-h-[500px] overflow-y-auto">
+          <div className="p-5 max-h-[600px] overflow-y-auto">
             <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans leading-relaxed">
-              {request.email_body || 'No email content available'}
+              {emails[0]?.body_clean || emails[0]?.body_raw || 'No email content available'}
             </pre>
           </div>
 
           {/* Attachments */}
-          {request.attachments && request.attachments.length > 0 && (
+          {attachments.length > 0 && (
             <div className="px-5 py-3 border-t border-gray-200 bg-gray-50">
               <div className="text-xs font-medium text-gray-500 mb-2">
                 Attachments
               </div>
               <div className="flex flex-wrap gap-2">
-                {request.attachments.map((att, i) => (
+                {attachments.map((att, i) => (
                   <a
                     key={i}
                     href={att.url}
