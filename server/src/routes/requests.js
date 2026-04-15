@@ -43,7 +43,7 @@ router.get('/', authenticate, async (req, res) => {
     let query = supabaseAdmin
       .from('requests')
       .select(
-        '*, inbound_email:emails!inbound_email_id(subject,from_address,to_address,received_at)',
+        '*, inbound_email:emails!inbound_email_id(subject,from_address,to_address,received_at), assigned_profile:profiles!assigned_to(id,email,full_name)',
         { count: 'exact' }
       )
       .order('created_at', { ascending: false })
@@ -61,8 +61,14 @@ router.get('/', authenticate, async (req, res) => {
       query = query.eq('assigned_to', assigned_to);
     }
     if (search) {
+      // Escape LIKE/ILIKE wildcards and the PostgREST filter delimiters so
+      // users can't craft ReDoS patterns or inject extra OR clauses.
+      const safe = String(search)
+        .replace(/[\\]/g, '\\\\')
+        .replace(/[%_]/g, '\\$&')
+        .replace(/[,()]/g, ' ');
       query = query.or(
-        `docket_number.ilike.%${search}%,customer_ref_number.ilike.%${search}%,account_code.ilike.%${search}%`
+        `docket_number.ilike.%${safe}%,customer_ref_number.ilike.%${safe}%,account_code.ilike.%${safe}%`
       );
     }
 
@@ -362,7 +368,10 @@ router.post('/search', authenticate, async (req, res) => {
     }
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
-    const searchTerm = query.trim();
+    const searchTerm = query.trim()
+      .replace(/[\\]/g, '\\\\')
+      .replace(/[%_]/g, '\\$&')
+      .replace(/[,()]/g, ' ');
 
     const { data, error, count } = await supabaseAdmin
       .from('requests')

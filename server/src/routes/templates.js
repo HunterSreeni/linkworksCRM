@@ -43,8 +43,8 @@ router.get('/:id', authenticate, async (req, res) => {
     // Include a list of placeholders found in this template
     const placeholders = [
       ...new Set([
-        ...listPlaceholders(data.subject),
-        ...listPlaceholders(data.body),
+        ...listPlaceholders(data.subject_template),
+        ...listPlaceholders(data.body_template),
       ]),
     ];
 
@@ -58,18 +58,18 @@ router.get('/:id', authenticate, async (req, res) => {
 // POST /api/templates - Create template (admin only)
 router.post('/', authenticate, requireAdmin, async (req, res) => {
   try {
-    const { name, subject, body, category } = req.body;
+    const { name, subject_template, body_template, description } = req.body;
 
-    if (!name || !subject || !body) {
-      return res.status(400).json({ error: 'name, subject, and body are required' });
+    if (!name || !subject_template || !body_template) {
+      return res.status(400).json({ error: 'name, subject_template, and body_template are required' });
     }
 
     const newTemplate = {
       id: uuidv4(),
       name,
-      subject,
-      body,
-      category: category || 'general',
+      subject_template,
+      body_template,
+      description: description || null,
       created_by: req.user.id,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -96,13 +96,13 @@ router.post('/', authenticate, requireAdmin, async (req, res) => {
 router.put('/:id', authenticate, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, subject, body, category } = req.body;
+    const { name, subject_template, body_template, description } = req.body;
 
     const updates = { updated_at: new Date().toISOString() };
     if (name !== undefined) updates.name = name;
-    if (subject !== undefined) updates.subject = subject;
-    if (body !== undefined) updates.body = body;
-    if (category !== undefined) updates.category = category;
+    if (subject_template !== undefined) updates.subject_template = subject_template;
+    if (body_template !== undefined) updates.body_template = body_template;
+    if (description !== undefined) updates.description = description;
 
     const { data, error } = await supabaseAdmin
       .from('email_templates')
@@ -150,10 +150,10 @@ router.delete('/:id', authenticate, requireAdmin, async (req, res) => {
 // POST /api/templates/preview - Preview template with placeholder values filled in
 router.post('/preview', authenticate, async (req, res) => {
   try {
-    const { template_id, subject, body, values } = req.body;
+    const { template_id, subject_template, body_template, values } = req.body;
 
-    let templateSubject = subject;
-    let templateBody = body;
+    let templateSubject = subject_template;
+    let templateBody = body_template;
 
     // If template_id is provided, fetch the template
     if (template_id) {
@@ -167,8 +167,8 @@ router.post('/preview', authenticate, async (req, res) => {
         return res.status(404).json({ error: 'Template not found' });
       }
 
-      templateSubject = template.subject;
-      templateBody = template.body;
+      templateSubject = template.subject_template;
+      templateBody = template.body_template;
     }
 
     if (!templateSubject && !templateBody) {

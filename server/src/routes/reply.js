@@ -42,17 +42,17 @@ async function sendViaGraphApi(to, subject, body) {
  * Log an audit entry.
  */
 async function logAudit(requestId, userId, action, details = {}) {
-  try {
-    await supabaseAdmin.from('audit_log').insert({
-      id: uuidv4(),
-      request_id: requestId,
-      user_id: userId,
-      action,
-      details,
-      created_at: new Date().toISOString(),
-    });
-  } catch (err) {
-    console.error('Audit log error:', err);
+  const { error } = await supabaseAdmin.from('audit_log').insert({
+    id: uuidv4(),
+    user_id: userId,
+    action,
+    entity_type: 'request',
+    entity_id: requestId,
+    details,
+    created_at: new Date().toISOString(),
+  });
+  if (error) {
+    console.error('Audit log insert failed:', error.message);
   }
 }
 
@@ -164,10 +164,13 @@ router.post('/', authenticate, async (req, res) => {
 
     // Link the outbound email to the request
     if (savedEmail) {
-      await supabaseAdmin
+      const { error: linkError } = await supabaseAdmin
         .from('requests')
         .update({ outbound_email_id: savedEmail.id, updated_at: new Date().toISOString() })
         .eq('id', request_id);
+      if (linkError) {
+        console.error('Failed to link outbound email to request:', linkError.message);
+      }
     }
 
     // Log audit

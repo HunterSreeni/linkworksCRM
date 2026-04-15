@@ -8,7 +8,7 @@ export default function TeamManagement() {
   const [error, setError] = useState('')
   const [showAdd, setShowAdd] = useState(false)
   const [addForm, setAddForm] = useState({
-    name: '',
+    full_name: '',
     email: '',
     role: 'member',
     password: '',
@@ -34,7 +34,7 @@ export default function TeamManagement() {
     try {
       await api.post('/users', addForm)
       setShowAdd(false)
-      setAddForm({ name: '', email: '', role: 'member', password: '' })
+      setAddForm({ full_name: '', email: '', role: 'member', password: '' })
       fetchUsers()
     } catch (err) {
       setError(err.message)
@@ -105,9 +105,9 @@ export default function TeamManagement() {
                 </label>
                 <input
                   type="text"
-                  value={addForm.name}
+                  value={addForm.full_name}
                   onChange={(e) =>
-                    setAddForm((p) => ({ ...p, name: e.target.value }))
+                    setAddForm((p) => ({ ...p, full_name: e.target.value }))
                   }
                   required
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"

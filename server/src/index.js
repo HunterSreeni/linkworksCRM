@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import rateLimit from 'express-rate-limit';
 
 import authRoutes from './routes/auth.js';
 import requestRoutes from './routes/requests.js';
@@ -20,11 +21,54 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
-app.use(helmet());
-app.use(cors());
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"], // Tailwind inline styles
+        imgSrc: ["'self'", 'data:', 'https:'],
+        connectSrc: ["'self'", 'https://*.supabase.co'],
+        frameAncestors: ["'none'"],
+      },
+    },
+  })
+);
+
+// CORS allowlist. ALLOWED_ORIGINS is a comma-separated list of origins
+// (e.g. "https://linkworks-crm.vercel.app,https://linkworks.netlify.app").
+// Leaving it unset in local dev falls back to the common Vite + local API hosts.
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://localhost:3001')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      // Allow server-to-server / same-origin (no Origin header) and allowlist hits.
+      if (!origin || allowedOrigins.includes(origin)) {
+        return cb(null, true);
+      }
+      return cb(new Error(`CORS: origin ${origin} not allowed`));
+    },
+    credentials: true,
+  })
+);
+
 app.use(morgan('combined'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+
+// Rate limit auth endpoints to slow brute-force attempts.
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many auth attempts. Try again in 15 minutes.' },
+});
 
 // Health check
 app.get('/health', (req, res) => {
@@ -32,7 +76,7 @@ app.get('/health', (req, res) => {
 });
 
 // Mount routes
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/requests', requestRoutes);
 app.use('/api/emails', emailRoutes);
 app.use('/api/templates', templateRoutes);

@@ -43,9 +43,14 @@ export function renderTemplate(template, values = {}) {
  * @returns {object} Rendered { subject, body }
  */
 export function renderEmailTemplate(template, values = {}) {
+  // Support both schema column names (subject_template/body_template) and
+  // short aliases (subject/body) used when callers pass raw strings from
+  // the preview endpoint.
+  const subjectSrc = template.subject_template ?? template.subject ?? '';
+  const bodySrc = template.body_template ?? template.body ?? '';
   return {
-    subject: renderTemplate(template.subject || '', values),
-    body: renderTemplate(template.body || '', values),
+    subject: renderTemplate(subjectSrc, values),
+    body: renderTemplate(bodySrc, values),
   };
 }
 

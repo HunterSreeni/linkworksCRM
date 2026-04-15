@@ -363,11 +363,21 @@ CREATE POLICY requests_insert_policy ON requests
   FOR INSERT TO authenticated
   WITH CHECK (true);
 
--- UPDATE: all authenticated users (audit log tracks who changed what)
+-- UPDATE: admins OR the assigned member. Members cannot update requests they
+-- can't even SELECT. Also covers the unassigned-draft case where any member
+-- can pick up a draft and then update it (once assigned_to = self).
 CREATE POLICY requests_update_policy ON requests
   FOR UPDATE TO authenticated
-  USING (true)
-  WITH CHECK (true);
+  USING (
+    is_admin()
+    OR assigned_to = auth.uid()
+    OR (assigned_to IS NULL AND status = 'draft')
+  )
+  WITH CHECK (
+    is_admin()
+    OR assigned_to = auth.uid()
+    OR (assigned_to IS NULL AND status = 'draft')
+  );
 
 -- ----------------------------------------------------------------------------
 -- email_templates RLS policies

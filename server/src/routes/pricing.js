@@ -24,46 +24,51 @@ router.get('/', authenticate, async (req, res) => {
   }
 });
 
-// GET /api/pricing/calculate - Calculate price for given vehicle_type + hazardous flag
+// GET /api/pricing/calculate - Calculate price for given vehicle_type + hazardous + optional weight
 router.get('/calculate', authenticate, async (req, res) => {
   try {
-    const { vehicle_type, hazardous } = req.query;
+    const { vehicle_type, hazardous, weight_kg } = req.query;
 
     if (!vehicle_type) {
       return res.status(400).json({ error: 'vehicle_type is required' });
     }
 
     const isHazardous = hazardous === 'true' || hazardous === '1';
+    const weight = weight_kg ? parseFloat(weight_kg) : 0;
 
-    // Find matching pricing rule
-    const { data: rules, error } = await supabaseAdmin
+    // Find matching pricing rule - schema has UNIQUE(vehicle_type, is_hazardous)
+    // so there's a distinct row per hazard flag.
+    const { data: rule, error } = await supabaseAdmin
       .from('pricing_rules')
       .select('*')
-      .eq('vehicle_type', vehicle_type);
+      .eq('vehicle_type', vehicle_type)
+      .eq('is_hazardous', isHazardous)
+      .eq('is_active', true)
+      .maybeSingle();
 
     if (error) {
       return res.status(500).json({ error: error.message });
     }
 
-    if (!rules || rules.length === 0) {
-      return res.status(404).json({ error: `No pricing rule found for vehicle type: ${vehicle_type}` });
+    if (!rule) {
+      return res.status(404).json({
+        error: `No active pricing rule for vehicle_type=${vehicle_type}, hazardous=${isHazardous}`,
+      });
     }
 
-    const rule = rules[0];
-    let price = parseFloat(rule.base_price) || 0;
-
-    // Apply hazardous surcharge if applicable
-    if (isHazardous && rule.hazardous_surcharge) {
-      price += parseFloat(rule.hazardous_surcharge);
-    }
+    const basePrice = parseFloat(rule.base_price) || 0;
+    const perKg = parseFloat(rule.price_per_kg) || 0;
+    const weightCharge = weight > 0 ? weight * perKg : 0;
+    const total = basePrice + weightCharge;
 
     return res.json({
       vehicle_type,
       hazardous: isHazardous,
-      base_price: parseFloat(rule.base_price),
-      hazardous_surcharge: isHazardous ? parseFloat(rule.hazardous_surcharge || 0) : 0,
-      total_price: price,
-      currency: rule.currency || 'GBP',
+      weight_kg: weight,
+      base_price: basePrice,
+      price_per_kg: perKg,
+      weight_charge: weightCharge,
+      total_price: total,
     });
   } catch (err) {
     console.error('Calculate pricing error:', err);
@@ -74,7 +79,7 @@ router.get('/calculate', authenticate, async (req, res) => {
 // POST /api/pricing - Create pricing rule (admin only)
 router.post('/', authenticate, requireAdmin, async (req, res) => {
   try {
-    const { vehicle_type, base_price, hazardous_surcharge = 0, currency = 'GBP', description } = req.body;
+    const { vehicle_type, is_hazardous = false, base_price, price_per_kg = 0, description, is_active = true } = req.body;
 
     if (!vehicle_type || base_price === undefined) {
       return res.status(400).json({ error: 'vehicle_type and base_price are required' });
@@ -83,10 +88,11 @@ router.post('/', authenticate, requireAdmin, async (req, res) => {
     const newRule = {
       id: uuidv4(),
       vehicle_type,
+      is_hazardous,
       base_price,
-      hazardous_surcharge,
-      currency,
+      price_per_kg,
       description: description || null,
+      is_active,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -112,14 +118,15 @@ router.post('/', authenticate, requireAdmin, async (req, res) => {
 router.put('/:id', authenticate, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { vehicle_type, base_price, hazardous_surcharge, currency, description } = req.body;
+    const { vehicle_type, is_hazardous, base_price, price_per_kg, description, is_active } = req.body;
 
     const updates = { updated_at: new Date().toISOString() };
     if (vehicle_type !== undefined) updates.vehicle_type = vehicle_type;
+    if (is_hazardous !== undefined) updates.is_hazardous = is_hazardous;
     if (base_price !== undefined) updates.base_price = base_price;
-    if (hazardous_surcharge !== undefined) updates.hazardous_surcharge = hazardous_surcharge;
-    if (currency !== undefined) updates.currency = currency;
+    if (price_per_kg !== undefined) updates.price_per_kg = price_per_kg;
     if (description !== undefined) updates.description = description;
+    if (is_active !== undefined) updates.is_active = is_active;
 
     const { data, error } = await supabaseAdmin
       .from('pricing_rules')

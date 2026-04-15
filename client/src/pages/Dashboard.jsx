@@ -18,11 +18,11 @@ import {
 } from 'recharts'
 
 const statCards = [
-  { key: 'totalAll', label: 'Total Dockets (All Time)', icon: FileText, color: 'bg-blue-500' },
-  { key: 'totalPrevMonth', label: 'Total Dockets (Prev Month)', icon: CalendarDays, color: 'bg-indigo-500' },
-  { key: 'totalCurrMonth', label: 'Total Dockets (This Month)', icon: CalendarCheck, color: 'bg-green-500' },
-  { key: 'totalToday', label: "Today's Dockets", icon: Clock, color: 'bg-amber-500' },
-  { key: 'pendingRequests', label: 'Pending Requests', icon: FileQuestion, color: 'bg-red-500' },
+  { key: 'total_requests', label: 'Total Dockets (All Time)', icon: FileText, color: 'bg-blue-500' },
+  { key: 'requests_prev_month', label: 'Total Dockets (Prev Month)', icon: CalendarDays, color: 'bg-indigo-500' },
+  { key: 'requests_this_month', label: 'Total Dockets (This Month)', icon: CalendarCheck, color: 'bg-green-500' },
+  { key: 'today_requests', label: "Today's Dockets", icon: Clock, color: 'bg-amber-500' },
+  { key: 'pending_requests', label: 'Pending Requests', icon: FileQuestion, color: 'bg-red-500' },
 ]
 
 export default function Dashboard() {

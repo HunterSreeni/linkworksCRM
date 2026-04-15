@@ -1,16 +1,21 @@
 import { supabaseAdmin } from '../config/supabase.js';
 
-const API_KEY = process.env.API_KEY || 'dev-api-key-change-me';
+// API key auth is only available when explicitly configured via env.
+// No default fallback - never ship a well-known shared secret to production.
+const API_KEY = process.env.API_KEY;
 
 /**
- * Authenticate requests via Bearer token (Supabase JWT) or x-api-key header (MVP testing).
+ * Authenticate requests via Bearer token (Supabase JWT) or x-api-key header.
  * Attaches user and role to req on success.
  */
 export async function authenticate(req, res, next) {
   try {
-    // MVP mode - simple API key for testing
+    // API key mode - only accepted when API_KEY is set and client supplies it.
     const apiKey = req.headers['x-api-key'];
     if (apiKey) {
+      if (!API_KEY) {
+        return res.status(401).json({ error: 'API key auth disabled - use Bearer token' });
+      }
       if (apiKey !== API_KEY) {
         return res.status(401).json({ error: 'Invalid API key' });
       }

@@ -2,17 +2,9 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
-import { Inbox, CheckCircle, AlertTriangle, XCircle, Users, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Inbox, Users, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PAGE_SIZE = 25
-
-function ConfidenceBadge({ level }) {
-  if (level === 'high')
-    return <CheckCircle size={14} className="text-green-500" />
-  if (level === 'medium')
-    return <AlertTriangle size={14} className="text-yellow-500" />
-  return <XCircle size={14} className="text-red-500" />
-}
 
 export default function BookingsIntake() {
   const [requests, setRequests] = useState([])
@@ -214,9 +206,6 @@ export default function BookingsIntake() {
                   Received
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  Confidence
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Assigned
                 </th>
               </tr>
@@ -249,11 +238,8 @@ export default function BookingsIntake() {
                       ? new Date(req.created_at).toLocaleString()
                       : '-'}
                   </td>
-                  <td className="px-4 py-3">
-                    <ConfidenceBadge level={req.overall_confidence || 'low'} />
-                  </td>
                   <td className="px-4 py-3 text-sm text-gray-500">
-                    {req.assigned_to_name || (req.assigned_to ? 'Assigned' : '-')}
+                    {req.assigned_profile?.full_name || req.assigned_profile?.email || '-'}
                   </td>
                 </tr>
               ))}

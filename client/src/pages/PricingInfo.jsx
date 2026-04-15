@@ -29,7 +29,7 @@ export default function PricingInfo() {
         api.get('/pricing'),
         api.get('/dashboard/stats').catch(() => null),
       ])
-      setRules(r?.pricing || r?.pricing_rules || r?.data || [])
+      setRules(r?.rules || r?.pricing || r?.pricing_rules || r?.data || [])
       setSummary(s)
     } catch (err) {
       setError(err.message)
@@ -45,7 +45,7 @@ export default function PricingInfo() {
 
   const handleSaveEdit = async () => {
     try {
-      await api.put(`/pricing`, { ...editForm, id: editingId })
+      await api.put(`/pricing/${editingId}`, editForm)
       setEditingId(null)
       fetchData()
     } catch (err) {

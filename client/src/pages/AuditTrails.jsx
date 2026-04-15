@@ -27,8 +27,8 @@ export default function AuditTrails() {
       if (search) params.set('search', search)
 
       const res = await api.get(`/audit?${params.toString()}`)
-      setLogs(res?.audit || res?.data || [])
-      setTotalPages(res?.totalPages || res?.total_pages || 1)
+      setLogs(res?.audit_logs || res?.audit || res?.data || [])
+      setTotalPages(res?.pagination?.pages || 1)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -125,7 +125,7 @@ export default function AuditTrails() {
                       : '-'}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-700">
-                    {log.user_name || log.user_email || '-'}
+                    {log.user?.full_name || log.user?.email || '-'}
                   </td>
                   <td className="px-4 py-3">
                     <span className="inline-block px-2 py-1 text-xs rounded-full font-medium bg-blue-100 text-blue-700">

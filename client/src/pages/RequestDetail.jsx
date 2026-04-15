@@ -252,8 +252,8 @@ export default function RequestDetail() {
         </div>
       </div>
 
-      {/* Bounce/delivery alert */}
-      {request.delivery_status === 'failed' && (
+      {/* Bounce/delivery alert - driven by request.status enum, not a separate column */}
+      {request.status === 'delivery_failed' && (
         <div className="bg-red-50 border border-red-300 text-red-800 px-4 py-3 rounded-lg flex items-center gap-2">
           <AlertTriangle size={18} />
           <span className="font-medium">Delivery Failed</span> - The confirmation

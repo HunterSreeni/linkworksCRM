@@ -81,23 +81,27 @@ export default function OutputTracker() {
                     {r.customer_ref_number || '-'}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-500">
-                    {r.replied_at
-                      ? new Date(r.replied_at).toLocaleString()
+                    {r.updated_at
+                      ? new Date(r.updated_at).toLocaleString()
                       : '-'}
                   </td>
                   <td className="px-4 py-3">
-                    {r.delivery_status === 'failed' ? (
+                    {r.status === 'delivery_failed' ? (
                       <span className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full font-medium bg-red-100 text-red-700">
                         <AlertTriangle size={12} />
                         Delivery Failed
                       </span>
-                    ) : r.delivery_status === 'delivered' ? (
+                    ) : r.status === 'closed' ? (
                       <span className="inline-block px-2 py-1 text-xs rounded-full font-medium bg-green-100 text-green-700">
                         Delivered
                       </span>
+                    ) : r.status === 'replied' ? (
+                      <span className="inline-block px-2 py-1 text-xs rounded-full font-medium bg-blue-100 text-blue-700">
+                        Replied
+                      </span>
                     ) : (
                       <span className="inline-block px-2 py-1 text-xs rounded-full font-medium bg-gray-100 text-gray-600">
-                        {r.delivery_status || 'Pending'}
+                        {r.status || 'Pending'}
                       </span>
                     )}
                   </td>

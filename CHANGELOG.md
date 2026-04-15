@@ -8,6 +8,69 @@ Format follows [Semantic Versioning](https://semver.org/):
 
 ---
 
+## [0.1.8] - 2026-04-15 (Security + codebase cleanup)
+
+Post-audit pass. Two subagents swept the codebase for security holes and silent bugs; this release fixes everything they found except the known-test-only IMAP app password.
+
+### Critical
+- **CORS was wide open** - `server/src/index.js` used `cors()` with no args, accepting every origin. Now an allowlist via `ALLOWED_ORIGINS` env var (comma-separated), falling back to localhost in dev. Unknown origins get rejected.
+- **Default API key `dev-api-key-change-me` removed** - `server/src/middleware/auth.js` no longer has a hard-coded fallback. When `API_KEY` env is unset, the `x-api-key` auth path is disabled; only Supabase Bearer tokens work.
+
+### Schema drift (silent data loss)
+- **email_templates columns** - `server/src/routes/templates.js` was writing `subject`/`body`/`category`, schema has `subject_template`/`body_template`/`description`. Every template create/update was silently failing. Fixed column names everywhere including the preview endpoint and `server/src/utils/templateEngine.js`.
+- **pricing_rules columns** - `server/src/routes/pricing.js` was writing `hazardous_surcharge`/`currency`, schema has `is_hazardous`/`price_per_kg` with a composite unique key `(vehicle_type, is_hazardous)`. Fixed POST, PUT, and `/calculate` logic to use the actual columns.
+- **Pricing list frontend** - `client/src/pages/PricingInfo.jsx` expected `r.pricing`/`r.pricing_rules`; API returns `r.rules`. Showed "No pricing rules defined" despite 8 rows existing.
+- **Pricing PUT frontend** - was calling `api.put('/pricing', {id})`, API route is `/pricing/:id`. Fixed.
+- **Dashboard stat keys** - frontend read `stats.totalAll`/`totalPrevMonth`/etc., API returned `total_requests`/`requests_prev_month`/etc. All cards were stuck at 0.
+- **TeamManagement form** - sent `name`, API expected `full_name`. New users were created without names.
+
+### UI fields that never existed
+- **RequestDetail `request.delivery_status`** doesn't exist as a column - delivery-failed banner never showed. Now driven by `status === 'delivery_failed'` which is a valid enum value.
+- **OutputTracker `r.replied_at` / `r.delivery_status`** - neither exists. Replaced with `updated_at` and proper `status`-based rendering (delivery_failed / closed / replied).
+- **BookingsIntake `req.overall_confidence` and `req.assigned_to_name`** - neither ever came from the API. Removed the Confidence column entirely (v0.1.4 raw-email mode doesn't compute confidence anyway). `assigned_to_name` replaced by proper `profiles` join -> `req.assigned_profile.full_name`.
+- **AuditTrails `log.user_name` / `log.user_email`** - API returned only `user_id`. Backend now joins `profiles` into the select; frontend reads `log.user.full_name || log.user.email`.
+- **AuditTrails response shape** - frontend expected `res.audit` / `res.totalPages`, API returns `res.audit_logs` / `res.pagination.pages`.
+
+### Reply flow
+- **Audit log column mismatch** - `server/src/routes/reply.js` was inserting `request_id` into `audit_log` where the schema expects `entity_type`/`entity_id`. Every reply-sent audit was silently failing. Fixed + added error log check.
+- **Unchecked `.update()` linking outbound email** - if the request update failed after send, the link was silently dropped. Now `{ error }` destructured and logged.
+
+### Auth + infra
+- **Supabase env var validation** - `server/src/config/supabase.js` now throws at startup if `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, or `SUPABASE_ANON_KEY` are missing. Previously the app started with undefined keys and failed on the first DB call.
+- **Helmet CSP** - explicit directives replacing the default permissive config. Blocks inline scripts, restricts connect-src to Supabase, sets `frame-ancestors 'none'`.
+- **Rate limit on /api/auth/** - `express-rate-limit` 10 requests per 15 min per IP. Returns 429 with a clear message. Verified: 11th login attempt → 429.
+- **Attachment download IDOR closed** - `server/src/routes/attachments.js` now checks the attachment's linked request. Members can only download attachments for requests assigned to them (or unassigned drafts). Admins unrestricted.
+- **ILIKE / OR sanitization** - `server/src/routes/requests.js` search param now escapes `%`, `_`, and strips `,()` before interpolation into the PostgREST `.or()` filter string. Prevents wildcard DoS and clause injection.
+- **RLS tightening** - `requests_update_policy` no longer uses `USING (true)`. Now mirrors the SELECT policy: admin, assigned, or unassigned-draft. Backend uses service-role and bypasses RLS, but this is defense-in-depth for any future direct-frontend writes.
+
+### Added
+- **Migration `0003_tighten_requests_update_rls.sql`** - DROP + CREATE on the UPDATE policy. Run once in Supabase SQL editor.
+
+### Migration step (run once before pulling v0.1.8)
+```sql
+DROP POLICY IF EXISTS requests_update_policy ON requests;
+CREATE POLICY requests_update_policy ON requests
+  FOR UPDATE TO authenticated
+  USING (is_admin() OR assigned_to = auth.uid() OR (assigned_to IS NULL AND status = 'draft'))
+  WITH CHECK (is_admin() OR assigned_to = auth.uid() OR (assigned_to IS NULL AND status = 'draft'));
+```
+
+### Required env vars (add before deploy)
+- `ALLOWED_ORIGINS` - comma-separated list of allowed browser origins, e.g. `https://linkworks-crm.vercel.app,http://localhost:5173`
+- `API_KEY` - optional; only set if you want server-to-server API key auth enabled
+
+### E2E verified
+- Dashboard stats populated (60 total, correct counts)
+- Bookings Intake lists 7 drafts + pagination + no fake Confidence column
+- Pricing page lists all 8 rules with correct is_hazardous + price_per_kg
+- Templates render subject/body placeholders
+- Audit trail reads (no backfilled data yet - empty list)
+- Attachment download returns signed URL (admin path)
+- CORS rejects `https://evil.example.com`, allows `http://localhost:5173`
+- Rate limit returns 429 after 10 login attempts
+
+---
+
 ## [0.1.7] - 2026-04-15 (Email attachments download)
 
 ### Fixed
