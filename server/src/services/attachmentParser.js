@@ -9,7 +9,7 @@ let XLSX;
 async function getPdfParser() {
   if (!pdfParse) {
     const mod = await import('pdf-parse');
-    pdfParse = mod.default || mod;
+    pdfParse = mod.PDFParse;
   }
   return pdfParse;
 }
@@ -38,8 +38,9 @@ async function getXLSX() {
  */
 export async function parsePDF(buffer) {
   try {
-    const pdf = await getPdfParser();
-    const data = await pdf(buffer);
+    const PDFParseCls = await getPdfParser();
+    const parser = new PDFParseCls({ data: buffer });
+    const data = await parser.getText();
     return data.text || '';
   } catch (err) {
     console.error('PDF parse error:', err.message);

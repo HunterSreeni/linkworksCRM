@@ -1,8 +1,25 @@
 import { Router } from 'express';
 import { supabaseAdmin } from '../config/supabase.js';
 import { authenticate } from '../middleware/auth.js';
+import { pollCycle, resetPollerState } from '../services/email/poller.js';
 
 const router = Router();
+
+// POST /api/emails/poll - Manually trigger an immediate poll cycle.
+// Pass { reset: true } to also reset the in-memory UID tracker so
+// every email in the inbox is reconsidered (use after a DB wipe).
+router.post('/poll', authenticate, async (req, res) => {
+  try {
+    if (req.body?.reset === true) {
+      resetPollerState();
+    }
+    await pollCycle();
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Manual poll error:', err);
+    return res.status(500).json({ error: err.message || 'Poll failed' });
+  }
+});
 
 const VALID_CLASSIFICATIONS = ['booking', 'query', 'bounce', 'auto_reply', 'noise', 'unclassified'];
 

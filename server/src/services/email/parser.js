@@ -92,9 +92,9 @@ const NON_HAZARDOUS_PATTERNS = [
 
 // Reference number patterns
 const CUSTOMER_REF_PATTERNS = [
-  /(?:customer|cust|your)\s*ref(?:erence)?(?:\s*(?:no|number|#|:))?[:\s]*([A-Z0-9\-\/]+)/i,
-  /(?:order|po)\s*(?:no|number|#|:)?[:\s]*([A-Z0-9\-\/]+)/i,
-  /ref[:\s]*([A-Z0-9\-\/]{3,})/i,
+  /\b(?:customer|cust|your)\s*ref(?:erence)?(?:\s*(?:no|number|#|:))?[:\s]*([A-Z0-9][A-Z0-9\-\/]{2,})/i,
+  /\b(?:order|po)\s*(?:no\.?|number|#|:)\s*([A-Z0-9][A-Z0-9\-\/]{2,})/i,
+  /\bref[:\s]+([A-Z0-9][A-Z0-9\-\/]{3,})/i,
 ];
 
 const ACCOUNT_CODE_PATTERNS = [

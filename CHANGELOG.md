@@ -16,6 +16,27 @@ Format follows [Semantic Versioning](https://semver.org/):
 - **Member status tracking** - Manual status updates for team members (active/idle/busy) with timestamp tracking
 - **Per-member email and task tracking** - Track which member sent which email, individual task assignments, and activity history per member
 - **Docket/task state flow** - Fix the processing/confirmed/completed status transitions - implement proper state machine for: draft -> confirmed -> processing -> replied -> closed / delivery_failed
+- **Replied-by / Closed-by member tracking** - New `replied_by` and `closed_by` columns on `requests`, stamped on state transitions, surfaced in dashboard per-member stats
+- **LLM parser middleware** - Replace / augment regex-based extraction (`server/src/services/email/parser.js`) with an LLM structured-extraction layer that returns typed JSON (addresses, dates, weight, vehicle, hazardous, customer ref). Regex kept as fast-path fallback. Motivated by UAT surfacing persistent parser-quality issues on real-world emails.
+
+---
+
+## [0.1.3] - 2026-04-15
+
+### Fixed
+- **PDF parser broken on v2 API** - `pdf-parse` v2.4.5 is a class-based rewrite with no default export. Updated `server/src/services/attachmentParser.js` to use `new PDFParse({ data: buffer }).getText()` instead of the v1 `pdf(buffer)` call. PDF attachments now extract text correctly.
+- **Silent request-insert failures** - `server/src/services/email/poller.js` was awaiting `supabaseAdmin.from('requests').insert()` without checking the error. Failed inserts were logged as `"Created request"`, hiding the real problem. Added `{ error }` destructure + explicit `FAILED to create request from "<subject>": <reason>` log.
+- **Vehicle enum mismatch dropping requests** - Parser extracted vehicle strings like `"artic"`, `"van"`, `"7.5t"`, `"flatbed"` which don't match the DB enum `vehicle_type` (`standard | tailift | oog | curtain_side`). Added `normaliseVehicle()` mapper in the poller to coerce raw strings to valid enum values (or null).
+- **Datetime string insert errors** - Parser returned strings like `"18 April 2026, by 17:00"` which Postgres rejected for `TIMESTAMPTZ` columns. Added `toIsoTimestamp()` in the poller to parse `DD Month YYYY [HH:MM]` patterns into valid ISO strings before insert; unparseable values become `null` instead of failing the whole request.
+- **Customer ref regex grabbing word fragments** - Pattern `/(?:order|po)\s*.../` was matching inside `po`tential / `po`ssible / `po`stcode. Added `\b` word boundaries and required a separator (colon/number/hash) after the keyword, so only real references like `PO-45872-A`, `CR-2026-0417` are captured.
+
+### Added
+- **Manual poll endpoint** - `POST /api/emails/poll` (auth required) triggers an immediate poll cycle. Accepts `{ reset: true }` to reset the in-memory `lastSeenUid` tracker - useful after a DB wipe to reconsider every message in the inbox.
+- **Refresh inbox button** - Added to `TriageQueue.jsx` and `BookingsIntake.jsx` (top-right). Calls `POST /api/emails/poll` and re-fetches the list when polling completes. Removes the 60-second wait for the next automatic poll tick.
+- **Vite host binding** - `client/vite.config.js` now sets `server.host: true` so the dev server listens on `0.0.0.0` and is reachable from other machines on the LAN.
+- **NETLIFY_MIGRATION.md** - Plan for future Vercel -> Netlify migration using `serverless-http`. Deferred until Azure AD Graph API credentials land.
+- **TEST_RESET_PLAN.md** - SQL + Supabase dashboard steps to wipe operational data, keep admin + templates + pricing rules, add 3 member accounts, and wire a real Gmail inbox via IMAP app password for local UAT.
+- **test-emails/** - Reproducible UAT fixtures: `generate.py` produces 3 PDFs, 1 DOCX, and 1 XLSX covering standard / hazardous / bulk multi-order / out-of-gauge / tail-lift scenarios plus query and missing-fields text emails.
 
 ---
 

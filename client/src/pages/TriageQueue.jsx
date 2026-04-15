@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
-import { AlertCircle, Tag, MessageSquare, Trash2, Inbox } from 'lucide-react'
+import { AlertCircle, Tag, MessageSquare, Trash2, Inbox, RefreshCw } from 'lucide-react'
 
 export default function TriageQueue() {
   const [emails, setEmails] = useState([])
@@ -8,6 +8,7 @@ export default function TriageQueue() {
   const [error, setError] = useState('')
   const [expandedId, setExpandedId] = useState(null)
   const [actionLoading, setActionLoading] = useState(null)
+  const [polling, setPolling] = useState(false)
 
   useEffect(() => {
     fetchEmails()
@@ -22,6 +23,19 @@ export default function TriageQueue() {
       setError(err.message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handlePoll() {
+    setPolling(true)
+    setError('')
+    try {
+      await api.post('/emails/poll', {})
+      await fetchEmails()
+    } catch (err) {
+      setError(err.message || 'Poll failed')
+    } finally {
+      setPolling(false)
     }
   }
 
@@ -47,10 +61,21 @@ export default function TriageQueue() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-        <AlertCircle size={24} />
-        Triage Queue
-      </h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+          <AlertCircle size={24} />
+          Triage Queue
+        </h1>
+        <button
+          onClick={handlePoll}
+          disabled={polling}
+          className="flex items-center gap-2 px-3 py-2 text-sm font-medium bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+          title="Fetch new emails from inbox now"
+        >
+          <RefreshCw size={14} className={polling ? 'animate-spin' : ''} />
+          {polling ? 'Polling...' : 'Refresh inbox'}
+        </button>
+      </div>
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">

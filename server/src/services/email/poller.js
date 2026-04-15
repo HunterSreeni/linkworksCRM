@@ -5,6 +5,46 @@ import { classifyEmail } from './classifier.js';
 import { extractFromEmail } from './parser.js';
 import { parseAttachmentContent } from '../attachmentParser.js';
 
+const MONTHS = [
+  'january', 'february', 'march', 'april', 'may', 'june',
+  'july', 'august', 'september', 'october', 'november', 'december',
+];
+
+function toIsoTimestamp(raw) {
+  if (!raw) return null;
+  const text = String(raw);
+  const m = text.match(
+    /(\d{1,2})\s+(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{4})(?:[^\d]*?(\d{1,2}):(\d{2}))?/i
+  );
+  if (!m) {
+    const fallback = Date.parse(text);
+    return Number.isNaN(fallback) ? null : new Date(fallback).toISOString();
+  }
+  const [, day, month, year, hour, minute] = m;
+  const date = new Date(Date.UTC(
+    Number(year),
+    MONTHS.indexOf(month.toLowerCase()),
+    Number(day),
+    hour ? Number(hour) : 0,
+    minute ? Number(minute) : 0,
+  ));
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+const VEHICLE_ENUM_MAP = [
+  { match: /tail[\s-]?lift|moffett/i, value: 'tailift' },
+  { match: /curtain[\s-]?side|tautliner/i, value: 'curtain_side' },
+  { match: /low[\s-]?loader|out[\s-]?of[\s-]?gauge|abnormal/i, value: 'oog' },
+];
+
+function normaliseVehicle(raw, fullText) {
+  const haystack = `${raw || ''} ${fullText || ''}`;
+  for (const { match, value } of VEHICLE_ENUM_MAP) {
+    if (match.test(haystack)) return value;
+  }
+  return raw ? 'standard' : null;
+}
+
 let pollingInterval = null;
 let lastSeenUid = 0;
 let isPolling = false;
@@ -132,9 +172,9 @@ async function processEmail(email) {
         collection_address_confidence: extractedData.collection_address.confidence,
         delivery_address: extractedData.delivery_address.value,
         delivery_address_confidence: extractedData.delivery_address.confidence,
-        collection_datetime: extractedData.collection_date.value,
+        collection_datetime: toIsoTimestamp(extractedData.collection_date.value),
         collection_datetime_confidence: extractedData.collection_date.confidence,
-        delivery_datetime: extractedData.delivery_date.value,
+        delivery_datetime: toIsoTimestamp(extractedData.delivery_date.value),
         delivery_datetime_confidence: extractedData.delivery_date.confidence,
         is_hazardous: extractedData.hazardous.value || false,
         is_hazardous_confidence: extractedData.hazardous.confidence,
@@ -144,7 +184,10 @@ async function processEmail(email) {
         dimensions_confidence: extractedData.dimensions.confidence,
         quantity: extractedData.quantity.value,
         quantity_confidence: extractedData.quantity.confidence,
-        vehicle: extractedData.vehicle_type.value,
+        vehicle: normaliseVehicle(
+          extractedData.vehicle_type.value,
+          `${email.subject || ''} ${email.body_text || ''}`
+        ),
         vehicle_confidence: extractedData.vehicle_type.confidence,
         customer_ref_number: extractedData.customer_ref_number.value,
         account_code: extractedData.account_code.value,
@@ -155,7 +198,11 @@ async function processEmail(email) {
         updated_at: new Date().toISOString(),
       };
 
-      await supabaseAdmin.from('requests').insert(requestRecord);
+      const { error: reqError } = await supabaseAdmin.from('requests').insert(requestRecord);
+      if (reqError) {
+        console.error(`[Poller] FAILED to create request from "${email.subject}":`, reqError.message);
+        return;
+      }
 
       console.log(`[Poller] Created request ${requestId} from booking email: ${email.subject}`);
       return;
@@ -195,7 +242,11 @@ async function processEmail(email) {
 /**
  * Run a single poll cycle - connect, fetch, process, disconnect.
  */
-async function pollCycle() {
+export function resetPollerState() {
+  lastSeenUid = 0;
+}
+
+export async function pollCycle() {
   if (isPolling) {
     console.log('[Poller] Previous poll still running, skipping');
     return;

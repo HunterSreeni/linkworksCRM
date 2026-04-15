@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
-import { Inbox, CheckCircle, AlertTriangle, XCircle, Users } from 'lucide-react'
+import { Inbox, CheckCircle, AlertTriangle, XCircle, Users, RefreshCw } from 'lucide-react'
 
 function ConfidenceBadge({ level }) {
   if (level === 'high')
@@ -20,26 +20,42 @@ export default function BookingsIntake() {
   const [selected, setSelected] = useState(new Set())
   const [teamMembers, setTeamMembers] = useState([])
   const [assignTo, setAssignTo] = useState('')
+  const [polling, setPolling] = useState(false)
   const navigate = useNavigate()
   const { user } = useAuth()
 
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        const [res, team] = await Promise.all([
-          api.get('/requests?status=draft'),
-          api.get('/users').catch(() => ({ users: [] })),
-        ])
-        setRequests(res?.requests || res?.data || [])
-        setTeamMembers(team?.users || team?.data || [])
-      } catch (err) {
-        setError(err.message)
-      } finally {
-        setLoading(false)
-      }
+  async function fetchData() {
+    try {
+      setLoading(true)
+      const [res, team] = await Promise.all([
+        api.get('/requests?status=draft'),
+        api.get('/users').catch(() => ({ users: [] })),
+      ])
+      setRequests(res?.requests || res?.data || [])
+      setTeamMembers(team?.users || team?.data || [])
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
     }
+  }
+
+  useEffect(() => {
     fetchData()
   }, [])
+
+  async function handlePoll() {
+    setPolling(true)
+    setError('')
+    try {
+      await api.post('/emails/poll', {})
+      await fetchData()
+    } catch (err) {
+      setError(err.message || 'Poll failed')
+    } finally {
+      setPolling(false)
+    }
+  }
 
   const filtered = requests.filter((r) => {
     if (filter === 'unassigned') return !r.assigned_to
@@ -97,6 +113,15 @@ export default function BookingsIntake() {
           <Inbox size={24} />
           Bookings Intake
         </h1>
+        <button
+          onClick={handlePoll}
+          disabled={polling}
+          className="flex items-center gap-2 px-3 py-2 text-sm font-medium bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+          title="Fetch new emails from inbox now"
+        >
+          <RefreshCw size={14} className={polling ? 'animate-spin' : ''} />
+          {polling ? 'Polling...' : 'Refresh inbox'}
+        </button>
       </div>
 
       {error && (
