@@ -117,17 +117,40 @@ async function processEmail(email) {
       return;
     }
 
-    // Store attachments (metadata only - content parsing disabled for v0.1.4)
+    // Store attachments: upload binary to Supabase Storage, then insert row.
+    // Storage path: email-attachments/{email_id}/{attachment_id}_{filename}
     for (const att of email.attachments || []) {
-      const attachmentRecord = {
-        id: uuidv4(),
+      const attachmentId = uuidv4();
+      const safeName = (att.filename || 'unnamed').replace(/[^a-zA-Z0-9._-]/g, '_');
+      const storagePath = `${emailId}/${attachmentId}_${safeName}`;
+
+      let uploadOk = false;
+      if (att.content && Buffer.isBuffer(att.content)) {
+        const { error: upErr } = await supabaseAdmin.storage
+          .from('email-attachments')
+          .upload(storagePath, att.content, {
+            contentType: att.content_type || 'application/octet-stream',
+            upsert: false,
+          });
+        if (upErr) {
+          console.error(`[Poller] Attachment upload failed (${att.filename}):`, upErr.message);
+        } else {
+          uploadOk = true;
+        }
+      }
+
+      const { error: attErr } = await supabaseAdmin.from('attachments').insert({
+        id: attachmentId,
         email_id: emailId,
-        filename: att.filename,
-        content_type: att.content_type,
-        size: att.size,
+        filename: att.filename || 'unnamed',
+        file_type: att.content_type || null,
+        file_size: att.size || null,
+        storage_path: uploadOk ? storagePath : null,
         created_at: new Date().toISOString(),
-      };
-      await supabaseAdmin.from('attachments').insert(attachmentRecord);
+      });
+      if (attErr) {
+        console.error(`[Poller] Failed to store attachment row (${att.filename}):`, attErr.message);
+      }
     }
 
     // TODO(v0.2.0): restore classifier-driven routing. Kept as reference for

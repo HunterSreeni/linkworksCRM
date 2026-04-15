@@ -8,6 +8,31 @@ Format follows [Semantic Versioning](https://semver.org/):
 
 ---
 
+## [0.1.7] - 2026-04-15 (Email attachments download)
+
+### Fixed
+- **Attachment inserts were silently failing** - `server/src/services/email/poller.js` was writing `content_type` and `size` column names but the schema calls them `file_type` and `file_size`. Plus the insert had no error check (same pattern as the v0.1.3 request-insert bug). Result: `has_attachments=true` on emails but zero rows in the `attachments` table. Fixed by renaming fields and adding explicit error logging.
+
+### Added
+- **Attachment binaries uploaded to Supabase Storage** - Poller now uploads `att.content` Buffer to the private `email-attachments` bucket at `{email_id}/{attachment_id}_{safe_filename}`. The `storage_path` column is populated on success; null on upload failure (attachment metadata is still recorded even if upload fails).
+- **Download endpoint** - New `GET /api/attachments/:id/download` returns `{ url, filename, file_type, expires_in }` where `url` is a signed URL from `supabaseAdmin.storage.createSignedUrl(..., 300)` - valid for 5 minutes. No direct storage exposure to the browser.
+- **Download buttons on Request Detail** - `RequestDetail.jsx` attachment buttons now call the download endpoint and open the signed URL in a new tab. Shows file size in KB next to filename. Buttons disable with a tooltip when `storage_path` is null (emails received before storage was enabled).
+- **Migration `0002_email_attachments_bucket.sql`** - Creates the private `email-attachments` bucket with a 50 MB per-file cap. Run once in the Supabase SQL editor before pulling this version.
+- **Microsoft Graph attachment notes** - `ARCHITECTURE.md` "Mail Sources" section extended with the Graph two-phase attachment fetch pattern (`GET /messages/{id}/attachments/{id}/$value`), reference-attachment handling, and large-file streaming caveats - ready for the Graph adapter implementation.
+
+### Migration step (run once before pulling v0.1.7)
+```sql
+INSERT INTO storage.buckets (id, name, public, file_size_limit)
+VALUES ('email-attachments', 'email-attachments', false, 52428800)
+ON CONFLICT (id) DO NOTHING;
+```
+
+### Known limitations
+- Emails ingested before v0.1.7 (the current 60 in the DB from UAT) have no binary stored. Their attachment buttons show disabled with a "not captured" tooltip. To backfill: truncate emails/attachments/requests, then hit Refresh inbox - Gmail still has the attachments and the poller will now upload them.
+- Storage egress counts toward Supabase free 5 GB/month. At 500 KB average PDF and a typical 200-email/day shared inbox, that's ~3 GB/month just from uploads + occasional downloads. Comfortable but worth tracking.
+
+---
+
 ## [0.1.6] - 2026-04-15 (Pagination + DB watermark)
 
 ### Added

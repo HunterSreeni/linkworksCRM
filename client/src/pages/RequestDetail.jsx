@@ -94,6 +94,19 @@ export default function RequestDetail() {
     setFormData((prev) => ({ ...prev, [key]: value }))
   }
 
+  const handleAttachmentDownload = async (att) => {
+    try {
+      const res = await api.get(`/attachments/${att.id}/download`)
+      if (res?.url) {
+        window.open(res.url, '_blank', 'noopener,noreferrer')
+      } else {
+        setError('No download URL returned')
+      }
+    } catch (err) {
+      setError(err.message || 'Could not download attachment')
+    }
+  }
+
   const handleSave = async () => {
     setSaving(true)
     setError('')
@@ -305,16 +318,24 @@ export default function RequestDetail() {
               </div>
               <div className="flex flex-wrap gap-2">
                 {attachments.map((att, i) => (
-                  <a
+                  <button
                     key={i}
-                    href={att.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-blue-600"
+                    type="button"
+                    onClick={() => handleAttachmentDownload(att)}
+                    disabled={!att.storage_path}
+                    title={att.storage_path
+                      ? `Download ${att.filename}`
+                      : 'File content was not captured (received before storage was enabled)'}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Download size={12} />
                     {att.filename || `Attachment ${i + 1}`}
-                  </a>
+                    {att.file_size ? (
+                      <span className="text-gray-400 ml-1">
+                        ({(att.file_size / 1024).toFixed(0)} KB)
+                      </span>
+                    ) : null}
+                  </button>
                 ))}
               </div>
             </div>

@@ -184,6 +184,23 @@ The system has **two mail source adapters**, and which one runs depends on the e
 
 For the deferred Netlify hosting migration, see `NETLIFY_MIGRATION.md`.
 
+### Attachments on Microsoft Graph (production)
+
+Unlike IMAP (which delivers attachments inline as Buffers via `mailparser`), Microsoft Graph returns attachment **metadata only** on the initial message fetch. The binary content requires a second call:
+
+```
+GET /users/{mailbox}/messages/{message-id}/attachments/{attachment-id}/$value
+```
+
+This endpoint streams the raw bytes (PDF, DOCX, etc.) which we then upload to Supabase Storage in the same `email-attachments/{email_id}/{attachment_id}_{filename}` layout used by the IMAP adapter. Consequences for the Graph adapter implementation:
+
+- Two-phase fetch: webhook fires -> fetch message metadata -> for each attachment, call `$value` -> upload buffer to storage
+- Attachments > 3 MB require the `largeFileAttachment` streaming pattern per the Graph docs; 3 MB covers most logistics PDFs but worth handling for edge cases (Excel with embedded images, Word with photos)
+- Reference attachments (links to SharePoint/OneDrive files) arrive as a different `@odata.type` (`#microsoft.graph.referenceAttachment`) - we'd need to decide: download the SharePoint file via a second Graph call, or store the link and let the user click through
+- Each `$value` call counts as a separate Graph API invocation against throttle limits (currently 10k per 10 min per app per tenant - comfortable for one shared inbox)
+
+Reference: https://learn.microsoft.com/en-us/graph/api/attachment-get
+
 ---
 
 ## Vercel Deployment

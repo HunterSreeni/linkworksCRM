@@ -13,6 +13,7 @@ import userRoutes from './routes/users.js';
 import pricingRoutes from './routes/pricing.js';
 import dashboardRoutes from './routes/dashboard.js';
 import auditRoutes from './routes/audit.js';
+import attachmentRoutes from './routes/attachments.js';
 import { startPolling } from './services/email/poller.js';
 
 const app = express();
@@ -40,6 +41,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/pricing', pricingRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/audit', auditRoutes);
+app.use('/api/attachments', attachmentRoutes);
 
 // 404 handler
 app.use((req, res) => {
