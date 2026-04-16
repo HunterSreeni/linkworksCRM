@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
-import { PackageCheck, AlertTriangle } from 'lucide-react'
+import { PackageCheck, AlertTriangle, Flag } from 'lucide-react'
 
 export default function OutputTracker() {
   const [requests, setRequests] = useState([])
@@ -53,6 +53,8 @@ export default function OutputTracker() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-8">
+                </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Docket #
                 </th>
@@ -74,6 +76,9 @@ export default function OutputTracker() {
                   className="hover:bg-gray-50 cursor-pointer"
                   onClick={() => navigate(`/requests/${r.id}`)}
                 >
+                  <td className="px-4 py-3">
+                    {r.is_priority && <Flag size={14} className="text-red-500" />}
+                  </td>
                   <td className="px-4 py-3 text-sm font-medium text-blue-600">
                     {r.docket_number || '-'}
                   </td>

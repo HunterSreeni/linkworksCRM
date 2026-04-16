@@ -151,6 +151,7 @@ router.post('/', authenticate, async (req, res) => {
       delivery_datetime,
       vehicle,
       is_hazardous,
+      is_priority,
       weight,
       dimensions,
       quantity,
@@ -171,6 +172,7 @@ router.post('/', authenticate, async (req, res) => {
       delivery_datetime: delivery_datetime || null,
       vehicle: vehicle || null,
       is_hazardous: is_hazardous || false,
+      is_priority: is_priority || false,
       weight: weight || null,
       dimensions: dimensions || null,
       quantity: quantity || null,
@@ -214,6 +216,34 @@ router.patch('/:id', authenticate, async (req, res) => {
     delete updates.id;
     delete updates.created_at;
     delete updates.created_by;
+
+    // Remove join/computed fields that aren't real columns
+    delete updates.inbound_email;
+    delete updates.assigned_profile;
+    delete updates.emails;
+    delete updates.attachments;
+
+    // Sanitize: convert empty strings to null for columns that need it
+    // (enum, integer, timestamptz columns reject empty strings)
+    const nullIfEmpty = [
+      'vehicle', 'status', 'quantity', 'collection_datetime', 'delivery_datetime',
+      'assigned_to', 'confirmed_by', 'inbound_email_id', 'outbound_email_id',
+      'estimated_cost', 'pricing_category',
+    ];
+    for (const col of nullIfEmpty) {
+      if (updates[col] === '') updates[col] = null;
+    }
+
+    // Validate vehicle enum value if provided
+    const VALID_VEHICLES = ['standard', 'tailift', 'oog', 'curtain_side'];
+    if (updates.vehicle && !VALID_VEHICLES.includes(updates.vehicle)) {
+      return res.status(400).json({ error: `Invalid vehicle type: "${updates.vehicle}". Must be one of: ${VALID_VEHICLES.join(', ')}` });
+    }
+
+    // Validate quantity is positive if provided
+    if (updates.quantity != null && updates.quantity < 1) {
+      return res.status(400).json({ error: 'Quantity must be a positive number' });
+    }
 
     const { data, error } = await supabaseAdmin
       .from('requests')

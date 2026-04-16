@@ -130,13 +130,18 @@ CREATE TABLE requests (
   is_hazardous                    BOOLEAN,
   is_hazardous_confidence         confidence_level DEFAULT 'missing',
   weight                          TEXT,
+  weight_unit                     TEXT DEFAULT 'kg',
   weight_confidence               confidence_level DEFAULT 'missing',
   dimensions                      TEXT,
+  dimensions_unit                 TEXT DEFAULT 'cm',
   dimensions_confidence           confidence_level DEFAULT 'missing',
   quantity                        INTEGER,
   quantity_confidence             confidence_level DEFAULT 'missing',
   vehicle                         vehicle_type,
   vehicle_confidence              confidence_level DEFAULT 'missing',
+
+  -- priority
+  is_priority                     BOOLEAN DEFAULT false,
 
   -- pricing
   pricing_category                TEXT,

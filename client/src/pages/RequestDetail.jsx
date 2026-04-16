@@ -10,7 +10,19 @@ import {
   Download,
   Mail,
   X,
+  Flag,
 } from 'lucide-react'
+
+const VEHICLE_OPTIONS = [
+  { value: '', label: 'Select vehicle type...' },
+  { value: 'standard', label: 'Standard' },
+  { value: 'tailift', label: 'Tail Lift' },
+  { value: 'oog', label: 'Out of Gauge (OOG)' },
+  { value: 'curtain_side', label: 'Curtain Side' },
+]
+
+const WEIGHT_UNITS = ['kg', 'tonnes']
+const DIMENSION_UNITS = ['cm', 'm', 'mm']
 
 const fields = [
   { key: 'collection_address', label: 'Collection Address' },
@@ -18,10 +30,10 @@ const fields = [
   { key: 'collection_datetime', label: 'Collection Date/Time', type: 'datetime-local' },
   { key: 'delivery_datetime', label: 'Delivery Date/Time', type: 'datetime-local' },
   { key: 'is_hazardous', label: 'Hazardous', type: 'checkbox' },
-  { key: 'weight', label: 'Weight' },
-  { key: 'dimensions', label: 'Dimensions' },
+  { key: 'weight', label: 'Weight', type: 'unit', units: WEIGHT_UNITS, unitKey: 'weight_unit' },
+  { key: 'dimensions', label: 'Dimensions', type: 'unit', units: DIMENSION_UNITS, unitKey: 'dimensions_unit' },
   { key: 'quantity', label: 'Quantity', type: 'number' },
-  { key: 'vehicle', label: 'Vehicle Type' },
+  { key: 'vehicle', label: 'Vehicle Type', type: 'vehicle-select' },
   { key: 'customer_ref_number', label: 'Customer Ref #' },
   { key: 'account_code', label: 'Account Code' },
   { key: 'docket_number', label: 'Docket Number' },
@@ -157,7 +169,7 @@ export default function RequestDetail() {
     preview = preview.replace(/\{\{delivery_address\}\}/g, formData.delivery_address || '___')
     preview = preview.replace(/\{\{collection_datetime\}\}/g, formData.collection_datetime || '___')
     preview = preview.replace(/\{\{delivery_datetime\}\}/g, formData.delivery_datetime || '___')
-    preview = preview.replace(/\{\{vehicle_type\}\}/g, formData.vehicle_type || '___')
+    preview = preview.replace(/\{\{vehicle_type\}\}/g, formData.vehicle || '___')
     setReplyPreview(preview)
   }
 
@@ -228,6 +240,12 @@ export default function RequestDetail() {
           >
             {request.status}
           </span>
+          {request.is_priority && (
+            <span className="flex items-center gap-1 px-2 py-1 text-xs rounded-full font-medium bg-red-100 text-red-700">
+              <Flag size={10} />
+              Priority
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -357,6 +375,27 @@ export default function RequestDetail() {
             </button>
           </div>
           <div className="p-5 space-y-4 max-h-[500px] overflow-y-auto">
+            {/* Priority toggle */}
+            <div className="flex items-center justify-between pb-3 border-b border-gray-200">
+              <div className="flex items-center gap-2">
+                <Flag size={14} className={formData.is_priority ? 'text-red-500' : 'text-gray-400'} />
+                <span className="text-xs font-medium text-gray-600">High Priority</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleChange('is_priority', !formData.is_priority)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  formData.is_priority ? 'bg-red-500' : 'bg-gray-300'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    formData.is_priority ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+
             {fields.map((field) => (
               <div key={field.key}>
                 <div className="flex items-center gap-2 mb-1">
@@ -379,12 +418,70 @@ export default function RequestDetail() {
                     />
                     <span className="text-sm text-gray-700">Yes</span>
                   </label>
+                ) : field.type === 'vehicle-select' ? (
+                  <select
+                    value={formData[field.key] || ''}
+                    onChange={(e) => handleChange(field.key, e.target.value || null)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                  >
+                    {VEHICLE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                ) : field.type === 'unit' ? (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={formData[field.key] ?? ''}
+                      onChange={(e) => handleChange(field.key, e.target.value)}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder={`Enter ${field.label.toLowerCase()}`}
+                    />
+                    <select
+                      value={formData[field.unitKey] || field.units[0]}
+                      onChange={(e) => handleChange(field.unitKey, e.target.value)}
+                      className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white min-w-[80px]"
+                    >
+                      {field.units.map((u) => (
+                        <option key={u} value={u}>{u}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : field.type === 'datetime-local' ? (
+                  <div className="flex gap-2">
+                    <input
+                      type="datetime-local"
+                      value={formatDatetimeLocal(formData[field.key])}
+                      onChange={(e) => handleChange(field.key, e.target.value)}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    {formData[field.key] && (
+                      <button
+                        type="button"
+                        onClick={() => handleChange(field.key, null)}
+                        className="px-2 py-2 text-gray-400 hover:text-red-500"
+                        title="Clear date"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+                ) : field.type === 'number' ? (
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={formData[field.key] ?? ''}
+                    onChange={(e) => {
+                      const val = e.target.value === '' ? null : Math.max(1, parseInt(e.target.value) || 1)
+                      handleChange(field.key, val)
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
                 ) : (
                   <input
-                    type={field.type || 'text'}
-                    value={field.type === 'datetime-local'
-                      ? formatDatetimeLocal(formData[field.key])
-                      : (formData[field.key] ?? '')}
+                    type="text"
+                    value={formData[field.key] ?? ''}
                     onChange={(e) => handleChange(field.key, e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />

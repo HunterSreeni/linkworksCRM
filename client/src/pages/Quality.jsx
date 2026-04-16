@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
-import { Shield, Clock, CheckCircle, TrendingUp } from 'lucide-react'
+import { Shield, Clock, CheckCircle, TrendingUp, Flag } from 'lucide-react'
 
 export default function Quality() {
   const [data, setData] = useState(null)
@@ -99,6 +99,8 @@ export default function Quality() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-8">
+                </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Docket #
                 </th>
@@ -120,6 +122,9 @@ export default function Quality() {
                   className="hover:bg-gray-50 cursor-pointer"
                   onClick={() => navigate(`/requests/${r.id}`)}
                 >
+                  <td className="px-4 py-3">
+                    {r.is_priority && <Flag size={14} className="text-red-500" />}
+                  </td>
                   <td className="px-4 py-3 text-sm font-medium text-blue-600">
                     {r.docket_number || '-'}
                   </td>

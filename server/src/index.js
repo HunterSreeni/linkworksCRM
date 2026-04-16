@@ -44,6 +44,12 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,ht
   .map((o) => o.trim())
   .filter(Boolean);
 
+// In local dev, also allow access from the machine's LAN IP (common when
+// testing from another device or when Vite binds to 0.0.0.0).
+if (!process.env.VERCEL && !process.env.ALLOWED_ORIGINS) {
+  allowedOrigins.push('http://192.168.29.41:5173');
+}
+
 app.use(
   cors({
     origin: (origin, cb) => {

@@ -9,16 +9,30 @@ const router = Router();
 
 /**
  * Create an SMTP transporter from environment variables.
+ * Validates that required SMTP env vars are set before creating the transport.
  */
 function createSmtpTransport() {
+  const host = process.env.SMTP_HOST;
+  const port = parseInt(process.env.SMTP_PORT) || 587;
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASSWORD;
+
+  if (!host || !user || !pass) {
+    const missing = [];
+    if (!host) missing.push('SMTP_HOST');
+    if (!user) missing.push('SMTP_USER');
+    if (!pass) missing.push('SMTP_PASSWORD');
+    throw new Error(
+      `SMTP not configured. Missing env vars: ${missing.join(', ')}. ` +
+      'Set these in server/.env (local) or the host dashboard (Vercel/Netlify).'
+    );
+  }
+
   return nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: parseInt(process.env.SMTP_PORT) || 587,
-    secure: parseInt(process.env.SMTP_PORT) === 465,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASSWORD,
-    },
+    host,
+    port,
+    secure: port === 465,
+    auth: { user, pass },
   });
 }
 

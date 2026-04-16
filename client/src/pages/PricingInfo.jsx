@@ -103,14 +103,19 @@ export default function PricingInfo() {
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 Vehicle Type
               </label>
-              <input
-                type="text"
+              <select
                 value={addForm.vehicle_type}
                 onChange={(e) =>
                   setAddForm((p) => ({ ...p, vehicle_type: e.target.value }))
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              >
+                <option value="">Select...</option>
+                <option value="standard">Standard</option>
+                <option value="tailift">Tail Lift</option>
+                <option value="oog">Out of Gauge (OOG)</option>
+                <option value="curtain_side">Curtain Side</option>
+              </select>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -205,8 +210,7 @@ export default function PricingInfo() {
                   {editingId === rule.id ? (
                     <>
                       <td className="px-4 py-3">
-                        <input
-                          type="text"
+                        <select
                           value={editForm.vehicle_type || ''}
                           onChange={(e) =>
                             setEditForm((p) => ({
@@ -214,8 +218,14 @@ export default function PricingInfo() {
                               vehicle_type: e.target.value,
                             }))
                           }
-                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                        />
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm bg-white"
+                        >
+                          <option value="">Select...</option>
+                          <option value="standard">Standard</option>
+                          <option value="tailift">Tail Lift</option>
+                          <option value="oog">Out of Gauge (OOG)</option>
+                          <option value="curtain_side">Curtain Side</option>
+                        </select>
                       </td>
                       <td className="px-4 py-3">
                         <input

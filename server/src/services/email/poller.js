@@ -224,6 +224,7 @@ async function processEmail(email) {
       dimensions: null,
       quantity: null,
       vehicle: null,
+      is_priority: false,
       customer_ref_number: null,
       account_code: null,
       docket_number: null,

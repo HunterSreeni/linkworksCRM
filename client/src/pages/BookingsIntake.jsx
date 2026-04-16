@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
-import { Inbox, Users, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Inbox, Users, RefreshCw, ChevronLeft, ChevronRight, Flag } from 'lucide-react'
 
 const PAGE_SIZE = 25
 
@@ -196,6 +196,8 @@ export default function BookingsIntake() {
                     className="rounded border-gray-300"
                   />
                 </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-8">
+                </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Subject
                 </th>
@@ -224,6 +226,9 @@ export default function BookingsIntake() {
                       onChange={() => toggleSelect(req.id)}
                       className="rounded border-gray-300"
                     />
+                  </td>
+                  <td className="px-4 py-3">
+                    {req.is_priority && <Flag size={14} className="text-red-500" />}
                   </td>
                   <td className="px-4 py-3 text-sm font-medium text-gray-800">
                     {req.inbound_email?.subject || 'No subject'}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
-import { Settings, Search } from 'lucide-react'
+import { Settings, Search, Flag } from 'lucide-react'
 
 export default function ProcessingTracker() {
   const [requests, setRequests] = useState([])
@@ -81,6 +81,8 @@ export default function ProcessingTracker() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-8">
+                </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Docket #
                 </th>
@@ -111,9 +113,12 @@ export default function ProcessingTracker() {
               {filtered.map((r) => (
                 <tr
                   key={r.id}
-                  className="hover:bg-gray-50 cursor-pointer"
+                  className={`hover:bg-gray-50 cursor-pointer ${r.is_priority ? 'bg-red-50/50' : ''}`}
                   onClick={() => navigate(`/requests/${r.id}`)}
                 >
+                  <td className="px-4 py-3">
+                    {r.is_priority && <Flag size={14} className="text-red-500" />}
+                  </td>
                   <td className="px-4 py-3 text-sm font-medium text-blue-600">
                     {r.docket_number || '-'}
                   </td>
@@ -132,10 +137,10 @@ export default function ProcessingTracker() {
                       : '-'}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">
-                    {r.vehicle_type || '-'}
+                    {r.vehicle || '-'}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">
-                    {r.assigned_to_name || '-'}
+                    {r.assigned_profile?.full_name || r.assigned_profile?.email || '-'}
                   </td>
                   <td className="px-4 py-3">
                     <span
