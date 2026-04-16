@@ -48,6 +48,27 @@ function formatDatetimeLocal(iso) {
   }
 }
 
+function formatDateReadable(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString('en-GB', {
+      day: 'numeric', month: 'long', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+  } catch {
+    return iso;
+  }
+}
+
+const VEHICLE_DISPLAY = {
+  standard: 'Standard',
+  tailift: 'Tail Lift',
+  oog: 'Out of Gauge (OOG)',
+  curtain_side: 'Curtain Side',
+}
+
 const statusFlow = {
   draft: ['confirmed'],
   confirmed: ['processing'],
@@ -163,13 +184,23 @@ export default function RequestDetail() {
   const selectTemplate = (template) => {
     setSelectedTemplate(template)
     let preview = template.body_template || ''
+    const weightDisplay = formData.weight
+      ? `${formData.weight} ${formData.weight_unit || 'kg'}`
+      : '___'
+    const dimensionsDisplay = formData.dimensions
+      ? `${formData.dimensions} ${formData.dimensions_unit || 'cm'}`
+      : '___'
     preview = preview.replace(/\{\{docket_number\}\}/g, formData.docket_number || '___')
-    preview = preview.replace(/\{\{customer_ref_number\}\}/g, formData.customer_ref_number || '___')
+    preview = preview.replace(/\{\{customer_ref\}\}/g, formData.customer_ref_number || '___')
+    preview = preview.replace(/\{\{account_code\}\}/g, formData.account_code || '___')
     preview = preview.replace(/\{\{collection_address\}\}/g, formData.collection_address || '___')
+    preview = preview.replace(/\{\{collection_date\}\}/g, formatDateReadable(formData.collection_datetime) || '___')
     preview = preview.replace(/\{\{delivery_address\}\}/g, formData.delivery_address || '___')
-    preview = preview.replace(/\{\{collection_datetime\}\}/g, formData.collection_datetime || '___')
-    preview = preview.replace(/\{\{delivery_datetime\}\}/g, formData.delivery_datetime || '___')
-    preview = preview.replace(/\{\{vehicle_type\}\}/g, formData.vehicle || '___')
+    preview = preview.replace(/\{\{delivery_date\}\}/g, formatDateReadable(formData.delivery_datetime) || '___')
+    preview = preview.replace(/\{\{vehicle_type\}\}/g, VEHICLE_DISPLAY[formData.vehicle] || formData.vehicle || '___')
+    preview = preview.replace(/\{\{hazardous\}\}/g, formData.is_hazardous ? 'Yes' : 'No')
+    preview = preview.replace(/\{\{weight\}\}/g, weightDisplay)
+    preview = preview.replace(/\{\{dimensions\}\}/g, dimensionsDisplay)
     setReplyPreview(preview)
   }
 

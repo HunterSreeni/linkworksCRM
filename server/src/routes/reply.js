@@ -7,6 +7,45 @@ import { renderEmailTemplate } from '../utils/templateEngine.js';
 
 const router = Router();
 
+const VEHICLE_DISPLAY_NAMES = {
+  standard: 'Standard',
+  tailift: 'Tail Lift',
+  oog: 'Out of Gauge (OOG)',
+  curtain_side: 'Curtain Side',
+};
+
+/**
+ * Format an ISO date string into a readable format for emails.
+ * e.g. "2026-04-17T10:20:00+00:00" -> "17 April 2026 at 10:20"
+ */
+function formatDateForEmail(isoDate) {
+  if (!isoDate) return null;
+  try {
+    const d = new Date(isoDate);
+    if (Number.isNaN(d.getTime())) return isoDate;
+    const day = d.getUTCDate();
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December',
+    ];
+    const month = months[d.getUTCMonth()];
+    const year = d.getUTCFullYear();
+    const hours = String(d.getUTCHours()).padStart(2, '0');
+    const minutes = String(d.getUTCMinutes()).padStart(2, '0');
+    return `${day} ${month} ${year} at ${hours}:${minutes}`;
+  } catch {
+    return isoDate;
+  }
+}
+
+/**
+ * Format a vehicle enum value into a readable display name.
+ */
+function formatVehicleType(vehicle) {
+  if (!vehicle) return null;
+  return VEHICLE_DISPLAY_NAMES[vehicle] || vehicle;
+}
+
 /**
  * Create an SMTP transporter from environment variables.
  * Validates that required SMTP env vars are set before creating the transport.
@@ -123,10 +162,16 @@ router.post('/', authenticate, async (req, res) => {
       account_code: request.account_code,
       collection_address: request.collection_address,
       delivery_address: request.delivery_address,
-      delivery_date: request.delivery_datetime,
-      vehicle_type: request.vehicle,
+      collection_date: formatDateForEmail(request.collection_datetime),
+      delivery_date: formatDateForEmail(request.delivery_datetime),
+      vehicle_type: formatVehicleType(request.vehicle),
       hazardous: request.is_hazardous ? 'Yes' : 'No',
-      weight: request.weight,
+      weight: request.weight
+        ? `${request.weight} ${request.weight_unit || 'kg'}`
+        : null,
+      dimensions: request.dimensions
+        ? `${request.dimensions} ${request.dimensions_unit || 'cm'}`
+        : null,
       customer_name: customerEmail,
       ...placeholder_values,
     };
