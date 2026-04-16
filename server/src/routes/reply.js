@@ -221,15 +221,19 @@ router.post('/', authenticate, async (req, res) => {
       console.error('Failed to save outbound email record:', emailInsertError.message);
     }
 
-    // Link the outbound email to the request
-    if (savedEmail) {
-      const { error: linkError } = await supabaseAdmin
-        .from('requests')
-        .update({ outbound_email_id: savedEmail.id, updated_at: new Date().toISOString() })
-        .eq('id', request_id);
-      if (linkError) {
-        console.error('Failed to link outbound email to request:', linkError.message);
-      }
+    // Link the outbound email to the request and advance status to 'replied'
+    const requestUpdate = {
+      outbound_email_id: savedEmail?.id || null,
+      status: 'replied',
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error: linkError } = await supabaseAdmin
+      .from('requests')
+      .update(requestUpdate)
+      .eq('id', request_id);
+    if (linkError) {
+      console.error('Failed to update request after reply:', linkError.message);
     }
 
     // Log audit
